@@ -1,0 +1,2530 @@
+---
+title: "Making good decisions"
+author: "Ricky Ma & Tobias Gerstenberg"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    theme: cosmo
+    highlight: tango
+---
+
+# ABOUT
+
+## Mapping between manuscript and code
+
+The manuscript describes **three** experiments. The code (and the data folders) use a different, historical numbering with **five** condition-level datasets. The mapping is:
+
+| Manuscript                        | Condition                     | Code prefix | Data folder            |
+|-----------------------------------|-------------------------------|-------------|------------------------|
+| Experiment 1                      | `no feedback`                 | `exp1`      | `data/experiment1_no_feedback`   |
+| Experiment 1                      | `feedback`                    | `exp2`      | `data/experiment1_feedback`   |
+| Experiment 2                      | `people inference (novice)`   | `exp3`      | `data/experiment2_people_inference_novice`   |
+| Experiment 2                      | `data composition`            | `exp4`      | `data/experiment2_data_composition`  |
+| Experiment 3                      | `people inference (expert)`   | `exp5`      | `data/experiment3_people_inference_expert` |
+
+## Manuscript outputs produced here
+
+Figures:
+
+| Manuscript figure                     | Label             | File                            |
+|---------------------------------------|-------------------|---------------------------------|
+| Experiment results, selected trials   | Figure 2          | `trial_selection.pdf`           |
+| Distribution of final bonus scores    | Figure 3          | `bonuses.pdf`                   |
+| Model predictions vs. decisions       | Figure 4          | `model_scatter.pdf`             |
+| People inference vs. decisions        | Figure 5          | `flyer_vs_expected_benefit.pdf` |
+
+Figure 1 (the counterfactual decision model) and Figure 6 (examples from six theaters) are diagrams in `figures/diagrams/` and are not produced here.
+
+Tables:
+
+| Manuscript table                                 | Label       |
+|--------------------------------------------------|-------------|
+| Trial information and participant decisions      | Table 1     |
+| Model comparison for each condition              | Table 3     |
+| Predictors of participants' people inferences    | Table 4     |
+| People inferences for each trial (appendix)      | Table B1    |
+| Differences in performance between conditions    | Table C1    |
+| Correlations between decisions across conditions | Table D1    |
+| Performance as a function of degree              | Table E1    |
+| Performance as a function of CI familiarity      | Table E2    |
+
+Table 2 (model descriptions) is not computed; its content is summarized in the MODELS section.
+
+## A note on trial numbering
+
+`data/experiment1_no_feedback` and `data/experiment1_feedback` use one trial numbering; the other three folders use another. The two numberings are identical except that **trials 1 and 6 are swapped**. 
+
+# SETUP
+
+## Load packages
+
+```{r, message=F}
+library("knitr")
+library("brms")
+library("broom.mixed")
+library("forcats")
+library("ggridges")
+library("patchwork")
+library("corrr")
+library("png")
+library("grid")
+library("egg")
+library("ggrepel")
+library("kableExtra")  # for knitr tables
+library("xtable")      # for latex tables
+library("emmeans")     # for comparing conditions
+library("jsonlite")
+library("scales")
+library("Hmisc")       # for smean.cl.boot()
+library("weights")     # for rd()
+library("tidyverse")
+```
+
+## Set options
+
+```{r}
+theme_set(theme_classic() +
+    theme(text = element_text(size = 24)))
+
+opts_chunk$set(comment = "",
+               fig.show = "hold")
+
+# suppress grouping warning
+options(dplyr.summarize.inform = F)
+options(dplyr.summarise.inform = F)
+
+
+# function for printing out html or latex tables
+print_table = function(data, format = "html", digits = 2){
+  if(format == "html"){
+    data %>%
+      kable(digits = digits) %>%
+      kable_styling()
+  }else if(format == "latex"){
+    data %>%
+      xtable(digits = digits) %>%
+      print(include.rownames = F,
+            booktabs = T)
+  }
+}
+
+# trial mapping 
+df.trial_mapping =  tibble(trial_ordered = 1:22,
+                           trial = factor(c(1, 4, 5, 7, 10, 11, 13, 16, 17, 2, 3, 
+                                            6, 8, 9, 19, 12, 14, 15, 18, 22, 20, 21)))
+
+# for flipping trials in experiments 3, 4, and 5
+fun.flip_trial = function(df){
+  df %>% 
+  mutate(trial = ifelse(trial == 1, 99, trial),
+         trial = ifelse(trial == 6, 1, trial),
+         trial = ifelse(trial == 99, 6, trial),
+         trial = as.factor(trial))
+}
+```
+
+# DATA
+
+## Experiment 1: `no feedback` (code: exp1)
+
+```{r, warning=FALSE, message=FALSE}
+# Read in data
+df.exp1.demographics = read_csv(
+  "../../data/experiment1_no_feedback/counterfactual_inference-participants.csv",
+  show_col_types = FALSE)
+
+df.exp1.bonuses = read_csv(
+  "../../data/experiment1_no_feedback/bonuses.csv",
+  show_col_types = FALSE)
+
+df.exp1.long = read_csv(
+  "../../data/experiment1_no_feedback/counterfactual_inference-trials.csv",
+  show_col_types = FALSE) %>%
+  select(participant = workerid,
+         trial,
+         condition = proliferate.condition,
+         response = button_pressed,
+         -error) %>%
+  mutate(trial = as.factor(trial)) %>%
+  arrange(participant, trial)
+
+# Read in model predictions
+df.exp1.model = read_csv("../../data/experiment1_no_feedback/experiment_trial_objs.csv",
+                         show_col_types = FALSE) %>%
+  mutate(trial = 1:n(),
+         trial = as.factor(trial)) %>%
+  relocate(trial) %>% 
+  rename_with(.fn = ~ c("trial", "pyx", "pyxp", "pydox", "pydoxp",
+                             "ab_test", "weighted_ab_test", "cf_mean", "cf_min",
+                             "cf_max", "causal_power"))
+```
+
+## Experiment 1: `feedback` (code: exp2)
+
+```{r, warning=FALSE, message=FALSE}
+# Read in data
+df.exp2.demographics = read_csv(
+  "../../data/experiment1_feedback/counterfactual_inference-participants.csv",
+  show_col_types = FALSE) %>%
+  filter(proliferate.condition %in% c("observational_left_feedback",
+                                      "experimental_left_feedback"))
+
+df.exp2.bonuses = read_csv(
+  "../../data/experiment1_feedback/bonuses.csv",
+  show_col_types = FALSE)
+
+df.exp2.long = read_csv(
+  "../../data/experiment1_feedback/counterfactual_inference-trials.csv",
+  show_col_types = FALSE) %>%
+  select(participant = workerid,
+         trial,
+         condition = proliferate.condition,
+         response = button_pressed,
+         -error) %>%
+  group_by(participant) %>%
+  mutate(order = 1:n()) %>%
+  ungroup() %>%
+  mutate(trial = as.factor(trial)) %>%
+  arrange(participant, trial)
+
+# Read in model predictions
+df.exp2.model = read_csv("../../data/experiment1_feedback/experiment_trial_objs.csv",
+                         show_col_types = FALSE) %>%
+  mutate(trial = 1:n(),
+         trial = as.factor(trial)) %>%
+  relocate(trial) %>%
+  rename_with(.fn = ~ c("trial", "pyx", "pyxp", "pydox", "pydoxp",
+                             "ab_test", "weighted_ab_test", "cf_mean", "cf_min",
+                             "cf_max", "causal_power"))
+```
+
+## Experiment 2: `people inference` / novices (code: exp3)
+
+```{r, warning=FALSE, message=FALSE}
+df.exp3.demographics = read_csv(
+  "../../data/experiment2_people_inference_novice/counterfactual_inference-participants.csv",
+  show_col_types = FALSE)
+
+df.exp3.bonuses = read_csv(
+  "../../data/experiment2_people_inference_novice/bonuses.csv",
+  show_col_types = FALSE)
+
+df.exp3.long = read_csv(
+  "../../data/experiment2_people_inference_novice/counterfactual_inference-trials.csv",
+  show_col_types = FALSE) %>%
+  select(participant = workerid,
+         trial,
+         always, compliers, defiers, never,
+         condition = proliferate.condition,
+         response = flyer,
+         -error) %>%
+  group_by(participant) %>%
+  mutate(order = 1:n()) %>%
+  ungroup() %>%
+  fun.flip_trial() %>% 
+  arrange(participant, trial)
+  
+# long format of the four people-type judgments
+df.exp3.response_long = df.exp3.long %>%
+  pivot_longer(cols = c("defiers", "never", "always", "compliers"),
+               names_to = "type",
+               values_to = "value")
+
+# Read in model predictions
+df.exp3.model = read_csv("../../data/experiment2_people_inference_novice/experiment_trial_objs.csv",
+                         show_col_types = FALSE) %>%
+  mutate(trial = 1:n()) %>%
+  fun.flip_trial() %>% 
+  relocate(trial) %>%
+  rename_with(.fn = ~ c("trial", "pyx", "pyxp", "pydox", "pydoxp",
+                             "ab_test", "weighted_ab_test", "cf_mean", "cf_min",
+                             "cf_max", "causal_power")) %>% 
+  arrange(trial)
+
+# Normative probabilities of the four person types (Equations 1-4 in the paper),
+# expressed as percentages so they're on the same scale as participants' judgments.
+df.exp3.benefits = read_csv(
+  "../../data/experiment2_people_inference_novice/benefit_proportions.csv",
+  show_col_types = FALSE) %>% 
+  mutate(across(.cols = everything(),
+                .fns = ~ . * 100),
+         trial = 1:22) %>% 
+  fun.flip_trial() %>% 
+  rename("compliers" = "p_complier",
+         "defiers" = "p_defier",
+         "always" = "p_alwaystaker",
+         "never" = "p_nevertaker") %>%
+  select(trial, always, compliers, defiers, never) %>% 
+  arrange(trial)
+
+df.exp3.benefits_long = df.exp3.benefits %>%
+  pivot_longer(cols = c(always, compliers, defiers, never),
+               names_to = "variable",
+               values_to = "value")
+```
+
+## Experiment 2: `data composition` (code: exp4)
+
+```{r, warning=FALSE, message=FALSE}
+df.exp4.demographics = read_csv(
+  "../../data/experiment2_data_composition/counterfactual_inference-participants.csv",
+  show_col_types = FALSE)
+
+df.exp4.bonuses = read_csv(
+  "../../data/experiment2_data_composition/bonuses.csv",
+  show_col_types = FALSE)
+
+df.exp4.long = read_csv(
+  "../../data/experiment2_data_composition/counterfactual_inference-trials.csv",
+  show_col_types = FALSE) %>%
+  select(participant = workerid,
+         trial,
+         condition = proliferate.condition,
+         response = flyer,
+         -error) %>%
+  fun.flip_trial() %>% 
+  group_by(participant) %>%
+  mutate(order = 1:n()) %>% 
+  ungroup() %>%
+  arrange(participant, trial)
+
+df.exp4.model = read_csv("../../data/experiment2_data_composition/experiment_trial_objs.csv",
+                         show_col_types = FALSE) %>%
+  mutate(trial = 1:n()) %>%
+  fun.flip_trial() %>% 
+  relocate(trial) %>%
+  rename_with(.fn = ~ c("trial", "pyx", "pyxp", "pydox", "pydoxp",
+                             "ab_test", "weighted_ab_test", "cf_mean", "cf_min",
+                             "cf_max", "causal_power")) %>% 
+  arrange(trial)
+```
+
+## Experiment 3: `people inference` / experts (code: exp5)
+
+```{r, warning=FALSE, message=FALSE}
+df.exp5.long = map_dfr(
+  .x = list.files("../../data/experiment3_people_inference_expert/participant-data",
+                  pattern = "\\.csv$",
+                  full.names = TRUE),
+  .f = ~ read_csv(.x) %>%
+    mutate(
+      participant = str_remove(basename(.x), "\\.csv$")
+    ) %>%
+    filter(!is.na(trial)) %>%
+    select(participant, trial, response) %>%
+    mutate(response = map(response, ~ fromJSON(.x) %>%
+                            as_tibble())) %>%
+    unnest(response),
+  .id = NULL
+)
+
+df.exp5.long = df.exp5.long %>%
+  pivot_longer(cols = c(compliers, always, never, defiers),
+               names_to = "type",
+               values_to = "value") %>%
+  rename(response = flyer) %>%
+  fun.flip_trial() %>% 
+  mutate(response = as.numeric(response)) %>%
+  mutate(value = as.numeric(value)) %>%
+  select(participant, trial, response, trial, type, value) %>%
+  replace_na(list(value = 0)) %>% 
+  arrange(participant, trial)
+
+df.exp5.model = read_csv("../../data/experiment3_people_inference_expert/experiment_trial_objs.csv",
+                         show_col_types = FALSE) %>%
+  mutate(trial = 1:n()) %>%
+  fun.flip_trial() %>% 
+  relocate(trial) %>%
+  rename_with(.fn = ~ c("trial", "pyx", "pyxp", "pydox", "pydoxp",
+                             "ab_test", "weighted_ab_test", "cf_mean", "cf_min",
+                             "cf_max", "causal_power")) %>% 
+  arrange(trial)
+
+df.exp5.bonuses = df.exp5.long %>%
+  group_by(participant, trial) %>%
+  summarize(response = mean(response, na.rm = TRUE)) %>%
+  mutate(response = as.integer(round(response))) %>%
+  ungroup() %>%
+  left_join(df.exp5.model, by = "trial") %>%
+  filter(response == 1) %>%  # Include only rows where flyer == 1 (response == 1)
+  group_by(participant) %>%
+  summarize(
+    bonus = max(0, round(1 + (0.1 * sum(cf_mean)), 2)),  # Bonus with cap
+    bonus_no_cap = round(1 + (0.1 * sum(cf_mean)), 2)   # Bonus without cap
+  ) %>%
+  ungroup()
+
+df.exp5.demographics = map_dfr(
+  .x = list.files("../../data/experiment3_people_inference_expert/participant-data",
+                  pattern = "\\.csv$",
+                  full.names = TRUE),
+  .f = ~ read_csv(.x, show_col_types = F) %>%
+    mutate(
+      participant = str_remove(basename(.x), "\\.csv$")
+    ) %>%
+    select(participant, response) %>%
+    na.omit() %>%
+    slice_tail(n = 1) %>%
+    mutate(response = map(response, ~ fromJSON(.x) %>%
+                            as_tibble())) %>%
+    unnest(response),
+  .id = NULL
+)
+
+df.exp5.expertise = df.exp5.demographics %>%
+  select(participant, causal_inference) %>%
+  mutate(causal_inference = case_when(
+    causal_inference == "not at all" ~ 1,
+    causal_inference == "slightly" ~ 2,
+    causal_inference == "somewhat" ~ 3,
+    causal_inference == "very" ~ 4))
+```
+
+## Normative decision for each trial
+
+Adds `optimal_decision` (hand out the flyer iff the expected benefit is
+positive) to each set of model predictions. Used for scoring accuracy.
+
+```{r}
+df.exp1.model = df.exp1.model %>% mutate(optimal_decision = if_else(cf_mean > 0, 1, 0))
+df.exp2.model = df.exp2.model %>% mutate(optimal_decision = if_else(cf_mean > 0, 1, 0))
+df.exp3.model = df.exp3.model %>% mutate(optimal_decision = if_else(cf_mean > 0, 1, 0))
+df.exp4.model = df.exp4.model %>% mutate(optimal_decision = if_else(cf_mean > 0, 1, 0))
+df.exp5.model = df.exp5.model %>% mutate(optimal_decision = if_else(cf_mean > 0, 1, 0))
+```
+
+# MODELS 
+
+The five models compared in the manuscript (Table 2):
+
+| Name          | Predictors                                    | Object suffix                |
+|---------------|-----------------------------------------------|------------------------------|
+| Experimental  | `pydox + pydoxp`                              | `experimental_data_brm`      |
+| Observational | `pyx + pyxp`                                  | `observational_data_brm`     |
+| Full          | `pyx + pyxp + pydox + pydoxp`                 | `strength_all_brm`           |
+| $\Delta P$ combined | `strength_observation + strength_experiment`  | `strength_both_brm`          |
+| CDM           | `cf_mean` (normative expected benefit)        | `usm_brm`                    |
+
+Note on naming: in the data, `pyx`/`pyxp` are the *observational* probabilities $p(y|x)$ and $p(y|x')$, and `pydox`/`pydoxp` are the *experimental* probabilities $p(y_x)$ and $p(y_{x'})$. `usm` ("unit selection model") is the CDM.
+
+The `brm()` calls read cached fits from `models/`. Delete the corresponding `.rds` file to refit.
+
+## `no feedback` (exp1)
+
+```{r}
+df.exp1.brm = df.exp1.long %>%
+  left_join(df.exp1.model, by = "trial") %>%
+  mutate(strength_observation_brm = pyx - pyxp,
+         strength_experiment_brm = pydox - pydoxp)
+
+# CDM
+fit.exp1.usm_brm = brm(formula = response ~ 1 + cf_mean + (1 + cf_mean | participant),
+                       family = "bernoulli",
+                       data = df.exp1.brm,
+                       seed = 1,
+                       cores = 4,
+                       file = "models/usm_brm_exp1")
+
+# Delta P
+fit.exp1.strength_both_brm = brm(
+  formula = response ~ 1 + strength_observation_brm + strength_experiment_brm +
+    (1 + strength_observation_brm + strength_experiment_brm | participant),
+  data = df.exp1.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_both_brm_exp1")
+
+# Full
+fit.exp1.strength_all_brm = brm(
+  formula = response ~ 1 + pyx + pyxp + pydox + pydoxp +
+    (1 + pyx + pyxp + pydox + pydoxp | participant),
+  data = df.exp1.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_all_brm_exp1")
+
+# Observational
+fit.exp1.observational_data_brm = brm(
+  formula = response ~ 1 + pyx + pyxp +
+    (1 + pyx + pyxp | participant),
+  data = df.exp1.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/observational_data_brm_exp1")
+
+# Experimental
+fit.exp1.experimental_data_brm = brm(
+  formula = response ~ 1 + pydox + pydoxp +
+    (1 + pydox + pydoxp | participant),
+  data = df.exp1.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/experimental_data_brm_exp1")
+```
+
+## `feedback` (exp2)
+
+```{r}
+df.exp2.brm = df.exp2.long %>%
+  left_join(df.exp2.model, by = "trial") %>%
+  mutate(strength_observation_brm = pyx - pyxp,
+         strength_experiment_brm = pydox - pydoxp)
+
+fit.exp2.usm_brm = brm(formula = response ~ 1 + cf_mean + (1 + cf_mean | participant),
+                       family = "bernoulli",
+                       data = df.exp2.brm,
+                       seed = 1,
+                       cores = 4,
+                       file = "models/usm_brm_exp2")
+
+fit.exp2.strength_both_brm = brm(
+  formula = response ~ 1 + strength_observation_brm + strength_experiment_brm +
+    (1 + strength_observation_brm + strength_experiment_brm | participant),
+  data = df.exp2.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_both_brm_exp2")
+
+fit.exp2.strength_all_brm = brm(
+  formula = response ~ 1 + pyx + pyxp + pydox + pydoxp +
+    (1 + pyx + pyxp + pydox + pydoxp | participant),
+  data = df.exp2.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_all_brm_exp2")
+
+fit.exp2.observational_data_brm = brm(
+  formula = response ~ 1 + pyx + pyxp +
+    (1 + pyx + pyxp | participant),
+  data = df.exp2.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/observational_data_brm_exp2")
+
+fit.exp2.experimental_data_brm = brm(
+  formula = response ~ 1 + pydox + pydoxp +
+    (1 + pydox + pydoxp | participant),
+  data = df.exp2.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/experimental_data_brm_exp2")
+```
+
+## `people inference` / novices (exp3)
+
+```{r}
+df.exp3.brm = df.exp3.long %>%
+  left_join(df.exp3.model, by = "trial") %>%
+  mutate(strength_observation_brm = pyx - pyxp,
+         strength_experiment_brm = pydox - pydoxp)
+
+fit.exp3.usm_brm = brm(formula = response ~ 1 + cf_mean + (1 + cf_mean | participant),
+                       family = "bernoulli",
+                       data = df.exp3.brm,
+                       seed = 1,
+                       cores = 4,
+                       file = "models/usm_brm_exp3")
+
+fit.exp3.strength_both_brm = brm(
+  formula = response ~ 1 + strength_observation_brm + strength_experiment_brm +
+    (1 + strength_observation_brm + strength_experiment_brm | participant),
+  data = df.exp3.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_both_brm_exp3")
+
+fit.exp3.strength_all_brm = brm(
+  formula = response ~ 1 + pyx + pyxp + pydox + pydoxp +
+    (1 + pyx + pyxp + pydox + pydoxp | participant),
+  data = df.exp3.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_all_brm_exp3")
+
+fit.exp3.observational_data_brm = brm(
+  formula = response ~ 1 + pyx + pyxp +
+    (1 + pyx + pyxp | participant),
+  data = df.exp3.brm,
+  family = "bernoulli",
+  seed = 1, cores = 4,
+  file = "models/observational_data_brm_exp3")
+
+fit.exp3.experimental_data_brm = brm(
+  formula = response ~ 1 + pydox + pydoxp +
+    (1 + pydox + pydoxp | participant),
+  data = df.exp3.brm,
+  family = "bernoulli",
+  seed = 1, cores = 4,
+  file = "models/experimental_data_brm_exp3")
+```
+
+## `data composition` (exp4)
+
+```{r}
+df.exp4.brm = df.exp4.long %>%
+  left_join(df.exp4.model, by = "trial") %>%
+  mutate(strength_observation_brm = pyx - pyxp,
+         strength_experiment_brm = pydox - pydoxp)
+
+fit.exp4.usm_brm = brm(formula = response ~ 1 + cf_mean + (1 + cf_mean | participant),
+                       family = "bernoulli",
+                       data = df.exp4.brm,
+                       seed = 1,
+                       cores = 4,
+                       file = "models/usm_brm_exp4")
+
+fit.exp4.strength_both_brm = brm(
+  formula = response ~ 1 + strength_observation_brm + strength_experiment_brm +
+    (1 + strength_observation_brm + strength_experiment_brm | participant),
+  data = df.exp4.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_both_brm_exp4")
+
+fit.exp4.strength_all_brm = brm(
+  formula = response ~ 1 + pyx + pyxp + pydox + pydoxp +
+    (1 + pyx + pyxp + pydox + pydoxp | participant),
+  data = df.exp4.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_all_brm_exp4")
+
+fit.exp4.observational_data_brm = brm(
+  formula = response ~ 1 + pyx + pyxp +
+    (1 + pyx + pyxp | participant),
+  data = df.exp4.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/observational_data_brm_exp4")
+
+fit.exp4.experimental_data_brm = brm(
+  formula = response ~ 1 + pydox + pydoxp +
+    (1 + pydox + pydoxp | participant),
+  data = df.exp4.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/experimental_data_brm_exp4")
+```
+
+## `people inference` / experts (exp5)
+
+```{r}
+df.exp5.brm = df.exp5.long %>%
+  distinct(participant, trial, response) %>%
+  left_join(df.exp5.model, by = "trial") %>%
+  mutate(strength_observation_brm = pyx - pyxp,
+         strength_experiment_brm = pydox - pydoxp)
+
+fit.exp5.usm_brm = brm(formula = response ~ 1 + cf_mean + (1 + cf_mean | participant),
+                       family = "bernoulli",
+                       data = df.exp5.brm,
+                       seed = 1,
+                       cores = 4,
+                       file = "models/usm_brm_exp5")
+
+fit.exp5.strength_both_brm = brm(
+  formula = response ~ 1 + strength_observation_brm + strength_experiment_brm +
+    (1 + strength_observation_brm + strength_experiment_brm | participant),
+  data = df.exp5.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_both_brm_exp5")
+
+fit.exp5.strength_all_brm = brm(
+  formula = response ~ 1 + pyx + pyxp + pydox + pydoxp +
+    (1 + pyx + pyxp + pydox + pydoxp | participant),
+  data = df.exp5.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/strength_all_brm_exp5")
+
+fit.exp5.observational_data_brm = brm(
+  formula = response ~ 1 + pyx + pyxp +
+    (1 + pyx + pyxp | participant),
+  data = df.exp5.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/observational_data_brm_exp5")
+
+fit.exp5.experimental_data_brm = brm(
+  formula = response ~ 1 + pydox + pydoxp +
+    (1 + pydox + pydoxp | participant),
+  data = df.exp5.brm,
+  family = "bernoulli",
+  seed = 1,
+  cores = 4,
+  file = "models/experimental_data_brm_exp5")
+```
+
+## Model predictions for each trial
+
+```{r}
+
+fun.bayesian_predictions = function(data, fit, name){
+  fit %>% 
+    fitted(data,
+           re_formula = NA) %>% 
+    as_tibble() %>% 
+    select(!!name := Estimate) %>%
+    bind_cols(data, .)
+}
+
+# Experiment 1 
+
+df.exp1.regression_bayesian = df.exp1.brm %>% 
+  filter(row_number() %in% 1:22) %>% 
+  select(trial, contains("py"), cf_mean, contains("strength"))
+
+df.exp1.regression_bayesian = df.exp1.regression_bayesian %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp1.usm_brm,
+                           name = "usm") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp1.strength_both_brm,
+                           name = "strength_both") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp1.strength_all_brm,
+                           name = "strength_all") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp1.observational_data_brm,
+                           name = "observational_data") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp1.experimental_data_brm,
+                           name = "experimental_data")
+
+
+# Experiment 2
+
+df.exp2.regression_bayesian = df.exp2.brm %>% 
+  filter(row_number() %in% 1:22) %>% 
+  select(trial, contains("py"), cf_mean, contains("strength"))
+
+df.exp2.regression_bayesian = df.exp2.regression_bayesian %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp2.usm_brm,
+                           name = "usm") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp2.strength_both_brm,
+                           name = "strength_both") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp2.strength_all_brm,
+                           name = "strength_all") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp2.observational_data_brm,
+                           name = "observational_data") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp2.experimental_data_brm,
+                           name = "experimental_data")
+
+# Experiment 3
+
+df.exp3.regression_bayesian = df.exp3.brm %>% 
+  filter(row_number() %in% 1:22) %>% 
+  select(trial, contains("py"), cf_mean, contains("strength"))
+
+df.exp3.regression_bayesian = df.exp3.regression_bayesian %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp3.usm_brm,
+                           name = "usm") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp3.strength_both_brm,
+                           name = "strength_both") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp3.strength_all_brm,
+                           name = "strength_all") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp3.observational_data_brm,
+                           name = "observational_data") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp3.experimental_data_brm,
+                           name = "experimental_data")
+
+# Experiment 4
+
+df.exp4.regression_bayesian = df.exp4.brm %>% 
+  filter(row_number() %in% 1:22) %>% 
+  select(trial, contains("py"), cf_mean, contains("strength"))
+
+df.exp4.regression_bayesian = df.exp4.regression_bayesian %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp4.usm_brm,
+                           name = "usm") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp4.strength_both_brm,
+                           name = "strength_both") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp4.strength_all_brm,
+                           name = "strength_all") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp4.observational_data_brm,
+                           name = "observational_data") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp4.experimental_data_brm,
+                           name = "experimental_data")
+
+# Experiment 5
+
+df.exp5.regression_bayesian = df.exp5.brm %>% 
+  filter(row_number() %in% 1:22) %>% 
+  select(trial, contains("py"), cf_mean, contains("strength"))
+
+df.exp5.regression_bayesian = df.exp5.regression_bayesian %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp5.usm_brm,
+                           name = "usm") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp5.strength_both_brm,	
+                           name = "strength_both") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp5.strength_all_brm,
+                           name = "strength_all") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp5.observational_data_brm,
+                           name = "observational_data") %>% 
+  fun.bayesian_predictions(data = .,
+                           fit = fit.exp5.experimental_data_brm,
+                           name = "experimental_data")
+
+# Add trial means 
+df.exp1.regression_bayesian = df.exp1.regression_bayesian %>% 
+  left_join(df.exp1.long %>% 
+              group_by(trial) %>% 
+              summarize(response = mean(response)) %>% 
+              select(trial, response),
+			  by = "trial")
+
+df.exp2.regression_bayesian = df.exp2.regression_bayesian %>% 
+  left_join(df.exp2.long %>% 
+              group_by(trial) %>% 
+              summarize(response = mean(response)) %>% 
+              select(trial, response),
+			  by = "trial")
+
+df.exp3.regression_bayesian = df.exp3.regression_bayesian %>% 
+  left_join(df.exp3.long %>% 
+              group_by(trial) %>% 
+              summarize(response = mean(response)) %>% 
+              select(trial, response),
+			  by = "trial")
+
+df.exp4.regression_bayesian = df.exp4.regression_bayesian %>% 
+  left_join(df.exp4.long %>% 
+              group_by(trial) %>% 
+              summarize(response = mean(response)) %>% 
+              select(trial, response),
+			  by = "trial")
+
+df.exp5.regression_bayesian = df.exp5.regression_bayesian %>% 
+  left_join(df.exp5.long %>% 
+              group_by(trial) %>% 
+              summarize(response = mean(response)) %>% 
+              select(trial, response),
+			  by = "trial")
+
+```
+
+
+## Leave-one-out cross-validation
+
+Adds the `loo` criterion to each fit (used for the $\Delta$elpd column of Table 3). This is slow the first time (`reloo = T` refits problematic observations); afterwards the criterion is cached in the `.rds` files.
+
+```{r}
+fun.add_loo = function(fit, file){
+  add_criterion(fit, criterion = "loo", reloo = T, file = file)
+}
+
+fit.exp1.usm_brm = fun.add_loo(fit.exp1.usm_brm,
+                               "models/usm_brm_exp1")
+fit.exp1.strength_both_brm = fun.add_loo(fit.exp1.strength_both_brm,
+                                         "models/strength_both_brm_exp1")
+fit.exp1.strength_all_brm = fun.add_loo(fit.exp1.strength_all_brm,
+                                        "models/strength_all_brm_exp1")
+fit.exp1.observational_data_brm = fun.add_loo(fit.exp1.observational_data_brm,
+                                              "models/observational_data_brm_exp1")
+fit.exp1.experimental_data_brm = fun.add_loo(fit.exp1.experimental_data_brm,
+                                             "models/experimental_data_brm_exp1")
+
+fit.exp2.usm_brm = fun.add_loo(fit.exp2.usm_brm,
+                               "models/usm_brm_exp2")
+fit.exp2.strength_both_brm = fun.add_loo(fit.exp2.strength_both_brm,
+                                         "models/strength_both_brm_exp2")
+fit.exp2.strength_all_brm = fun.add_loo(fit.exp2.strength_all_brm,
+                                        "models/strength_all_brm_exp2")
+fit.exp2.observational_data_brm = fun.add_loo(fit.exp2.observational_data_brm,
+                                              "models/observational_data_brm_exp2")
+fit.exp2.experimental_data_brm = fun.add_loo(fit.exp2.experimental_data_brm,
+                                             "models/experimental_data_brm_exp2")
+
+fit.exp3.usm_brm = fun.add_loo(fit.exp3.usm_brm,
+                               "models/usm_brm_exp3")
+fit.exp3.strength_both_brm = fun.add_loo(fit.exp3.strength_both_brm,
+                                         "models/strength_both_brm_exp3")
+fit.exp3.strength_all_brm = fun.add_loo(fit.exp3.strength_all_brm,
+                                        "models/strength_all_brm_exp3")
+fit.exp3.observational_data_brm = fun.add_loo(fit.exp3.observational_data_brm,
+                                              "models/observational_data_brm_exp3")
+fit.exp3.experimental_data_brm = fun.add_loo(fit.exp3.experimental_data_brm,
+                                             "models/experimental_data_brm_exp3")
+
+fit.exp4.usm_brm = fun.add_loo(fit.exp4.usm_brm,
+                               "models/usm_brm_exp4")
+fit.exp4.strength_both_brm = fun.add_loo(fit.exp4.strength_both_brm,
+                                         "models/strength_both_brm_exp4")
+fit.exp4.strength_all_brm = fun.add_loo(fit.exp4.strength_all_brm,
+                                        "models/strength_all_brm_exp4")
+fit.exp4.observational_data_brm = fun.add_loo(fit.exp4.observational_data_brm,
+                                              "models/observational_data_brm_exp4")
+fit.exp4.experimental_data_brm = fun.add_loo(fit.exp4.experimental_data_brm,
+                                             "models/experimental_data_brm_exp4")
+
+fit.exp5.usm_brm = fun.add_loo(fit.exp5.usm_brm,
+                               "models/usm_brm_exp5")
+fit.exp5.strength_both_brm = fun.add_loo(fit.exp5.strength_both_brm,
+                                         "models/strength_both_brm_exp5")
+fit.exp5.strength_all_brm = fun.add_loo(fit.exp5.strength_all_brm,
+                                        "models/strength_all_brm_exp5")
+fit.exp5.observational_data_brm = fun.add_loo(fit.exp5.observational_data_brm,
+                                              "models/observational_data_brm_exp5")
+fit.exp5.experimental_data_brm = fun.add_loo(fit.exp5.experimental_data_brm,
+                                             "models/experimental_data_brm_exp5")
+```
+
+# EXPERIMENT 1: Decisions with and without feedback
+
+## Participants
+
+Note: free-text responses are reported here verbatim; the manuscript collapses them (e.g. `genderqueer` into non-binary, `Latina`/`Latino`/`hispanic` into Hispanic, `Mixed` into Multiracial).
+
+```{r}
+df.exp1and2.demographics = bind_rows(df.exp1.demographics,
+                                     df.exp2.demographics)
+
+df.exp1and2.demographics %>%
+  summarize(n = n(),
+            age.mean = mean(age, na.rm = T),
+            age.sd = sd(age, na.rm = T)) %>%
+  print_table()
+
+df.exp1and2.demographics %>% 
+  count(gender) %>% 
+  print_table()
+
+df.exp1and2.demographics %>% 
+	count(race) %>% 
+	print_table()
+
+df.exp1and2.demographics %>%
+  summarize(duration.mean = mean(time / 60000, na.rm = T),
+            duration.sd = sd(time / 60000, na.rm = T)) %>%
+  print_table(digits = 1)
+
+```
+
+## Figure 2: Experiment results for a selection of trials
+
+Produces `trial_selection.pdf`. The top row of images comes from `figures/trials/`, the middle row shows the people inferences of novices (exp3) and experts (exp5) against the normative predictions, and the bottom row shows the probability of handing out the flyer in all five conditions.
+
+```{r, fig.width=16, fig.height=7}
+set.seed(1)
+
+# scenarios A-F in the figure, in terms of the manuscript's trial ordering
+trial_selection = c(8, 18, 17, 10, 11, 22)
+
+# maps the manuscript's trial ordering (sorted by expected benefit) onto the raw
+# trial index used in the data
+df.trial_images = df.trial_mapping %>% 
+  filter(trial_ordered %in% trial_selection) %>%
+  mutate(trial_ordered = factor(trial_ordered, levels = trial_selection))
+
+df.plot = df.exp3.long %>%
+  select(-response) %>%
+  pivot_longer(cols = c("compliers", "always", "never", "defiers"),
+               names_to = "type",
+               values_to = "value") %>%
+  mutate(condition = "novice",
+         participant = as.character(participant)) %>%
+  bind_rows(df.exp5.long %>%
+              select(-response) %>%
+              mutate(condition = "expert")) %>%
+  mutate(condition = factor(condition, levels = c("novice", "expert"))) %>%
+  left_join(df.trial_images,
+            by = "trial") %>%
+  filter(trial_ordered %in% trial_selection) %>%
+  select(-order) %>%
+  mutate(type = factor(type, levels = c("compliers",
+                                        "always",
+                                        "never",
+                                        "defiers",
+                                        "flyer"))) %>%
+  na.omit()
+
+df.model = df.exp3.benefits %>%
+  pivot_longer(cols = c("compliers", "always", "never", "defiers"),
+               names_to = "type",
+               values_to = "value") %>%
+  mutate(trial = as.factor(trial)) %>%
+  left_join(df.trial_images,
+            by = "trial") %>%
+  filter(trial_ordered %in% trial_selection) %>%
+  mutate(condition = NA)
+
+fun.load_image = function(t){
+  readPNG(str_c("../../figures/trials/trial", t, ".png"))
+}
+
+# linking images and worlds
+df.images = df.plot %>%
+  distinct(trial, trial_ordered) %>%
+  arrange(trial_ordered) %>%
+  mutate(grob = map(.x = as.character(trial_ordered), .f = ~ fun.load_image(t = .x))) %>%
+  mutate(condition = NA)
+
+df.text = df.plot %>%
+  distinct(trial, trial_ordered) %>%
+  arrange(trial_ordered) %>%
+  mutate(x = 1,
+         y = Inf,
+         condition = NA,
+         label = LETTERS[1:nrow(.)])
+
+df.text2 = df.exp3.model %>%
+  select(trial, benefit = cf_mean) %>%
+  left_join(df.trial_images,
+            by = "trial") %>%
+  filter(trial_ordered %in% trial_selection) %>%
+  arrange(trial_ordered) %>%
+  mutate(label = dollar_format()(benefit),
+         x = 2,
+         condition = NA,
+         y = Inf)
+
+# FIRST PLOT: people inferences
+p1 = ggplot(data = df.plot,
+            mapping = aes(x = type,
+                          y = value,
+                          group = condition,
+                          color = condition,
+                          fill = condition)) +
+  stat_summary(fun = "mean",
+               geom = "bar",
+               color = "black",
+               alpha = 0.5,
+               position = position_dodge(0.9)) +
+  stat_summary(fun.data = "mean_cl_boot",
+               geom = "linerange",
+               linewidth = 1,
+               position = position_dodge(0.9)) +
+  geom_point(data = df.model,
+             mapping = aes(x = type,
+                           y = value),
+             size = 3,
+             shape = 21,
+             color="black") +
+  geom_custom(data = df.images,
+              mapping = aes(data = grob,
+                            x = -Inf,
+                            y = Inf),
+              grob_fun = function(x) rasterGrob(x,
+                                                interpolate = T,
+                                                vjust = -0.05,
+                                                hjust = 0)) +
+  geom_text(data = df.text,
+            mapping = aes(x = x,
+                          y = y,
+                          label = label),
+            size = 10,
+            vjust = -3.2,
+            color = "black",
+            hjust = 1.2) +
+  geom_text(data = df.text2,
+            mapping = aes(x = x,
+                          y = y,
+                          label = label),
+            color = "black",
+            size = 6,
+            vjust = -6,
+            hjust = 0) +
+  scale_fill_manual(values = c("novice" = "#8E13A1", "expert" = "#DF8FEB")) +
+  scale_color_manual(values = c("novice" = "#8E13A1", "expert" = "#DF8FEB")) +
+  facet_wrap(~ trial_ordered,
+             nrow = 1) +
+  coord_cartesian(clip = "off") +
+  labs(y = "people\ninference") +
+  scale_size_manual(values = c(0.5, 1.5)) +
+  scale_y_continuous(breaks = seq(0, 100, 25),
+                     labels = str_c(seq(0, 100, 25), "%"),
+                     limits = c(0, 100),
+                     expand = expansion(add = c(5, 0))) +
+  scale_x_discrete(labels = c("C", "A", "N", "D")) +
+  theme(panel.grid.major.y = element_line(color = "gray90"),
+        axis.text.y = element_text(size = 18),
+        axis.text.x = element_text(size = 20,
+                                   vjust = 0),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(vjust = -35,
+                                    size = 22),
+        legend.position = "none",
+        strip.background = element_blank(),
+        strip.text = element_blank(),
+        panel.spacing.x = unit(0.5, "cm"),
+        plot.margin = margin(t = 2.75, l = 0.5, r = 0.5, b = 0.2, unit = "cm"))
+
+# SECOND PLOT: decisions
+df.plot = df.exp1.long %>% mutate(experiment = "no feedback") %>%
+  bind_rows(df.exp2.long %>% mutate(experiment = "feedback")) %>%
+  bind_rows(df.exp3.long %>% mutate(experiment = "people inference (novice)")) %>%
+  bind_rows(df.exp4.long %>% mutate(experiment = "data composition")) %>%
+  bind_rows(df.exp5.long %>% mutate(experiment = "people inference (expert)") %>%
+              select(-participant)) %>%
+  mutate(experiment = factor(experiment,
+                             levels = c("no feedback",
+                                        "feedback",
+                                        "data composition",
+                                        "people inference (novice)",
+                                        "people inference (expert)"))) %>%
+  left_join(df.trial_images,
+            by = "trial") %>%
+  filter(trial_ordered %in% trial_selection)
+
+p2 = ggplot(data = df.plot,
+            mapping = aes(x = experiment,
+                          y = response,
+                          shape = experiment,
+                          group = experiment,
+                          fill = experiment,
+                          color = experiment)) +
+  stat_summary(fun.data = "mean_cl_boot",
+               size = 1,
+               geom = "linerange",
+               position = position_dodge(width = 0.5)) +
+  stat_summary(fun.data = "mean_cl_boot",
+               size = 5,
+               geom = "point",
+               color = "black",
+               position = position_dodge(width = 0.5)) +
+  facet_wrap(~ trial_ordered,
+             nrow = 1) +
+  coord_flip(ylim = c(0, 1)) +
+  labs(x = "condition",
+       y = "% handing out flyer") +
+  scale_x_discrete(limits = rev) +
+  scale_y_continuous(
+    breaks = seq(0, 1, 0.25),
+    labels = c("", "25%", "50%", "75%", ""),
+    limits = c(0, 1),
+    expand = c(0, 0)) +
+  scale_shape_manual(values = c("no feedback" = 21,
+                                "feedback" = 22,
+                                "data composition" = 23,
+                                "people inference (novice)" = 24,
+                                "people inference (expert)" = 25)) +
+  scale_fill_manual(values = c("no feedback" = "#377EB8",
+                                "feedback" = "#4DAF4A",
+                                "data composition" = "#E41A1C",
+                                "people inference (novice)" = "#8E13A1",
+                                "people inference (expert)" = "#DF8FEB")) +
+  scale_color_manual(values = c("no feedback" = "#377EB8",
+                                "feedback" = "#4DAF4A",
+                                "data composition" = "#E41A1C",
+                                "people inference (novice)" = "#8E13A1",
+                                "people inference (expert)" = "#DF8FEB") ) +
+  theme(axis.title.x = element_text(margin = margin(t = 10)),
+        axis.text.x = element_text(size = 14),
+        axis.title.y = element_blank(),
+        legend.position = "none",
+        panel.grid.major.x = element_line(color = "gray90"),
+        panel.spacing.x = unit(0.5, "cm"),
+        plot.margin = margin(t = 0.2, l = 0.5, r = 0.5, b = 0, "cm"),
+        strip.background = element_blank(),
+        strip.text = element_blank())
+
+p1 + p2 +
+  plot_layout(ncol = 1) &
+  plot_annotation(theme = theme(
+    plot.margin = margin(l = -2, t = 0.3, r = 0, b = 0.2, unit = "cm"),
+    panel.spacing = unit(0.1, "cm")
+  ))
+
+ggsave(file = "../../figures/plots/trial_selection.pdf",
+       width = 16,
+       height = 7)
+```
+
+## Bonuses
+
+### Bonus per condition
+
+> "Participants' average bonus exceeded the chance level in both the `no
+> feedback' condition (Mean = 0.51, 95% confidence interval = [0.37, 0.64]) and
+> the `feedback' condition (0.55, [0.44, 0.68])."
+
+and, for Experiment 2,
+
+> "In the `people inference' condition, participants' average bonus was 0.81
+> [0.62, 0.99], and in the `data composition' condition, it was 0.89 [0.69,
+> 1.08]."
+
+```{r}
+df.experiment_bonuses = tibble(
+  experiment = c(rep("1", times = length(df.exp1.bonuses$bonus_no_cap)),
+                 rep("2", times = length(df.exp2.bonuses$bonus_no_cap)),
+                 rep("3", times = length(df.exp3.bonuses$bonus_no_cap)),
+                 rep("4", times = length(df.exp4.bonuses$bonus_no_cap)),
+                 rep("5", times = length(df.exp5.bonuses$bonus_no_cap))),
+  bonus = c(df.exp1.bonuses$bonus,
+            df.exp2.bonuses$bonus,
+            df.exp3.bonuses$bonus,
+            df.exp4.bonuses$bonus,
+            df.exp5.bonuses$bonus),
+  bonus_no_cap = c(df.exp1.bonuses$bonus_no_cap,
+                   df.exp2.bonuses$bonus_no_cap,
+                   df.exp3.bonuses$bonus_no_cap,
+                   df.exp4.bonuses$bonus_no_cap,
+                   df.exp5.bonuses$bonus_no_cap)) %>%
+  mutate(experiment = as.factor(experiment))
+
+df.bonuses = df.experiment_bonuses %>%
+  mutate(participant = 1:n(),
+         experiment = factor(experiment,
+                             levels = c(1, 2, 4, 3, 5),
+                             labels = c("no feedback",
+                                        "feedback",
+                                        "data composition",
+                                        "people inference (novice)",
+                                        "people inference (expert)")))
+
+# mean bonus with 95% bootstrapped CI per condition (reported in text)
+df.bonuses %>%
+  group_by(experiment) %>%
+  reframe(value = smean.cl.boot(bonus_no_cap),
+          name = c("mean", "low", "high")) %>%
+  pivot_wider() %>%
+  ungroup() %>%
+  print_table()
+```
+
+### Percent of participants above the random baseline
+
+> "In the `no feedback' condition, 62% of participants received a bonus above
+> the chance level, and 64% in the `feedback' condition." 
+
+```{r}
+df.bonuses %>%
+  mutate(above_baseline = bonus_no_cap > 0.325) %>%
+  count(experiment, above_baseline) %>%
+  group_by(experiment) %>%
+  mutate(percentage = (n / sum(n)) * 100) %>%
+  filter(above_baseline) %>%
+  select(experiment, percentage) %>%
+  print_table(digits = 0)
+```
+
+### Figure 3: Distribution of final bonus scores
+
+```{r fig.height=4, fig.width=8}
+set.seed(1)
+
+colors = c("#377EB8", "#4DAF4A", "#E41A1C", "#8E13A1", "#DF8FEB")
+
+bonus_range = c(-1.9, 0.325, 2.55)
+
+plot = ggplot(data = df.bonuses,
+              mapping = aes(x = bonus_no_cap,
+                            y = experiment)) +
+  geom_vline(xintercept = bonus_range,
+             linetype = c("dashed", "dotted", "dashed"),
+             color = "gray50",
+             linewidth = 0.5) +
+  geom_density_ridges(mapping = aes(color = experiment,
+                                    fill = experiment),
+                      bandwidth = 0.242,
+                      jittered_points = TRUE,
+                      position = position_points_jitter(height = 0.075,
+                                                        width = 0),
+                      scale = 0.8,
+                      alpha = 0.25,
+                      panel_scaling = F,
+                      quantile_lines = TRUE,
+                      quantile_fun = function(bonus_no_cap,...){mean(bonus_no_cap)}) +
+  annotate(geom = "text",
+           x = c(2.55, 0.325, -1.9),
+           y = rep(5, 3),
+           color = "gray50",
+           label = c("2.55", "0.325", "-1.90"),
+           vjust = -4,
+           hjust = -0.2,
+           size = 5) +
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  scale_y_discrete(limits = rev,
+                   expand = expansion(add = c(0.25, 1.25))) +
+  labs(x = "Bonus",
+       y = "") +
+  coord_cartesian(clip = "off") +
+  theme_ridges(grid = F) +
+  theme(legend.position = "none",
+        axis.line.x = element_line(color = "black",
+                                   linewidth = 0.5),
+        axis.title.x = element_text(hjust = 0.5,
+                                    size = 15),
+        axis.text = element_text(size = 15),
+        plot.margin = margin(l = 0, unit = "cm"))
+
+plot
+
+ggsave(file = "../../figures/plots/bonuses.pdf",
+       width = 8,
+       height = 4)
+```
+
+## Percentage of correct decisions (bottom row of Table 1)
+
+```{r}
+set.seed(1)
+
+df.percentage_correct = df.exp1.long %>%
+  mutate(condition = "No feedback") %>%
+  bind_rows(df.exp2.long %>%
+              mutate(condition = "Feedback")) %>%
+  left_join(df.exp1.model %>%
+              select(trial, optimal_decision),
+            by = "trial") %>%
+  bind_rows(df.exp3.long %>%
+              mutate(condition = "People inference") %>%
+              bind_rows(df.exp4.long %>%
+                          mutate(condition = "Data composition")) %>%
+              left_join(df.exp3.model %>%
+                          select(trial, optimal_decision),
+                        by = "trial") %>%
+              select(-c(always, compliers, defiers, never))) %>%
+  mutate(participant = as.character(participant)) %>%
+  bind_rows(df.exp5.long %>%
+              distinct(participant, trial, response) %>%
+              mutate(condition = "Experts") %>%
+              left_join(df.exp5.model %>%
+                          select(trial, optimal_decision),
+                        by = "trial")) %>%
+  mutate(correct = response == optimal_decision)
+
+df.percentage_correct %>%
+  group_by(condition, participant) %>%
+  summarize(correct = mean(correct)) %>%
+  group_by(condition) %>%
+  reframe(value = smean.cl.boot(correct),
+          name = c("mean", "low", "high")) %>%
+  ungroup() %>%
+  pivot_wider() %>%
+  mutate(condition = factor(condition, levels = c("No feedback",
+                                                  "Feedback",
+                                                  "Data composition",
+                                                  "People inference",
+                                                  "Experts"))) %>%
+  arrange(condition) %>%
+  mutate(across(-condition,
+                ~ .*100)) %>%
+  print_table(digits = 0)
+```
+
+## Bias to hand out the flyer
+
+> "Participants were more likely to hand out the flyer than not, both in the `no
+> feedback' condition (56%, [53%, 58%]) and in the `feedback' condition (56%,
+> [54%, 58%])." (and 54% / 57% in Experiment 2)
+
+```{r}
+df.percentage_correct %>%
+  group_by(condition) %>%
+  reframe(value = smean.cl.boot(response),
+          name = c("mean", "low", "high")) %>%
+  pivot_wider() %>%
+  mutate(condition = factor(condition, levels = c("No feedback",
+                                                  "Feedback",
+                                                  "People inference",
+                                                  "Data composition",
+                                                  "Experts")),
+         across(-condition, ~ .*100)) %>%
+  arrange(condition) %>%
+  print_table(digits = 0)
+```
+
+## Improvement over time in the feedback conditions
+
+> "Participants' likelihood of making the correct decision did not change as a
+> function of trial number, 0.00 [-0.01, 0.01]." (Experiment 1, `feedback`)
+
+> "There was neither an effect of trial number on whether a decision was correct
+> in the `people inference' condition, -0.02 [-0.03, 0.00], nor in the `data
+> composition' condition, -0.01 [-0.03, 0.01]." (Experiment 2)
+
+```{r}
+df.model = df.exp2.long %>%
+  left_join(df.exp2.model %>%
+              select(trial, optimal_decision),
+            by = "trial") %>%
+  mutate(correct = 1*(response == optimal_decision))
+
+brm.exp2.improvement = brm(correct ~ 1 + order + (1 + order | participant),
+                           data = df.model,
+                           family = bernoulli(),
+                           cores = 4,
+                           seed = 1,
+                           control = list(adapt_delta = 0.99),
+                           file = "models/exp2_improvement")
+
+df.model = df.exp3.long %>%
+  left_join(df.exp3.model %>%
+              select(trial, optimal_decision),
+            by = "trial") %>%
+  mutate(correct = 1*(response == optimal_decision))
+
+brm.exp3.improvement = brm(correct ~ 1 + order + (1 + order | participant),
+                           data = df.model,
+                           family = bernoulli(),
+                           cores = 4,
+                           seed = 1,
+                           control = list(adapt_delta = 0.99),
+                           file = "models/exp3_improvement")
+
+df.model = df.exp4.long %>%
+  left_join(df.exp3.model %>%
+              select(trial, optimal_decision),
+            by = "trial") %>%
+  mutate(correct = 1*(response == optimal_decision))
+
+brm.exp4.improvement = brm(correct ~ 1 + order + (1 + order | participant),
+                           data = df.model,
+                           family = bernoulli(),
+                           cores = 4,
+                           seed = 1,
+                           control = list(adapt_delta = 0.99),
+                           file = "models/exp4_improvement")
+
+bind_rows(brm.exp2.improvement %>%
+            tidy() %>%
+            filter(term == "order") %>%
+            select(estimate, conf.low, conf.high) %>%
+            mutate(name = "feedback"),
+          brm.exp3.improvement %>%
+            tidy() %>%
+            filter(term == "order") %>%
+            select(estimate, conf.low, conf.high) %>%
+            mutate(name = "people inference"),
+          brm.exp4.improvement %>%
+            tidy() %>%
+            filter(term == "order") %>%
+            select(estimate, conf.low, conf.high) %>%
+            mutate(name = "data composition")) %>%
+  relocate(name) %>%
+  print_table()
+```
+
+## Table 1: Trial information and participant decisions
+
+The `*` / `#` suffixes mark whether the majority made the correct (green in the manuscript) or incorrect (red) decision.
+
+```{r}
+# round parentheses: scenarios in Figure 2; square brackets: examples in Figure 6
+df.selection = tibble(trial_ordered = c(8, 18, 17, 10, 11, 22),
+                      labels = LETTERS[1:6])
+
+df.examples = tibble(trial_ordered = c(2, 11, 1, 10, 7, 17),
+                     examples = LETTERS[1:6])
+
+df.table_trial_selection = df.exp5.model %>%
+  select(trial, pydox, pydoxp, pyx, pyxp, cf_mean) %>%
+  left_join(df.exp3.benefits %>%
+              mutate(across(.cols = -trial,
+                            .fns = ~ . / 100)) %>%
+              relocate(compliers, always, never, defiers) %>%
+              mutate(trial = as.factor(trial)),
+            by = "trial") %>%
+  relocate(benefit = cf_mean, .after = last_col()) %>%
+  left_join(df.exp1.long %>%
+              group_by(trial) %>%
+              summarize(`no feedback` = mean(response)),
+            by = "trial") %>%
+  left_join(df.exp2.long %>%
+              group_by(trial) %>%
+              summarize(`feedback` = mean(response)),
+            by = "trial") %>%
+  left_join(df.exp4.long %>%
+              group_by(trial) %>%
+              summarize(`data composition` = mean(response)),
+            by = "trial") %>%
+  left_join(df.exp3.long %>%
+              group_by(trial) %>%
+              summarize(`people inference (novice)` = mean(response)),
+            by = "trial") %>%
+  left_join(df.exp5.long %>%
+              group_by(trial) %>%
+              summarize(`people inference (expert)` = mean(response)),
+            by = "trial") %>%
+  left_join(df.trial_mapping,
+            by = "trial") %>%
+  left_join(df.selection,
+            by = "trial_ordered") %>%
+  left_join(df.examples,
+            by = "trial_ordered") %>%
+  relocate(trial_ordered, .before = trial) %>%
+  arrange(trial_ordered) %>%
+  mutate(trial_ordered = str_c(trial_ordered,
+                               ifelse(!is.na(labels), str_c(" (", labels, ")"), ""),
+                               ifelse(!is.na(labels) & !is.na(examples), ",", ""),
+                               ifelse(!is.na(examples), str_c(" [", examples, "]"), ""))) %>%
+  select(-c(trial, labels, examples)) %>%
+  rename(trial = trial_ordered) %>%
+  mutate(across(.cols = c(`no feedback`,
+                          `feedback`,
+                          `data composition`,
+                          `people inference (novice)`,
+                          `people inference (expert)`),
+                .fns = ~ ifelse((sign(benefit) == -1 & . <= 0.5) |
+                                (sign(benefit) == 1 & . >= 0.5),
+                                str_c(format(round(., 2), nsmall = 2),"*"),
+                                str_c(format(round(., 2), nsmall = 2),"#"))))
+
+df.table_trial_selection %>%
+  print_table(digits = 2)
+```
+
+## Figure 4: Model predictions vs. decisions
+
+```{r fig.width=24, fig.height=12}
+df.exp1.regression_bayesian$experiment = "no feedback"
+df.exp2.regression_bayesian$experiment = "feedback"
+df.exp3.regression_bayesian$experiment = "people inference (novice)"
+df.exp4.regression_bayesian$experiment = "data composition"
+df.exp5.regression_bayesian$experiment = "people inference (expert)"
+
+df.plot = bind_rows(df.exp1.regression_bayesian,
+                    df.exp2.regression_bayesian,
+                    df.exp3.regression_bayesian,
+                    df.exp4.regression_bayesian,
+                    df.exp5.regression_bayesian) %>%
+  mutate(experiment = factor(experiment, levels = c("no feedback",
+                                                    "feedback",
+                                                    "data composition",
+                                                    "people inference (novice)",
+                                                    "people inference (expert)")))
+
+fun.scatterplot = function(prediction, data, xtitle, ytitle, legend){
+  plot = ggplot(data = data,
+                mapping = aes(x = get(prediction),
+                              y = response,
+                              color = experiment)) +
+    geom_abline(intercept = 0,
+                slope = 1,
+                linetype = "dashed",
+                color = "black") +
+    geom_point(alpha = 0.6,
+               size = 4) +
+    annotate(geom = "text",
+             x = 0,
+             y = 1,
+             label = paste("r =", round(cor(data[[prediction]], data$response), 2),
+                           "\nRMSE =", round(sqrt(mean((data[[prediction]] - data$response)^2))*100, 2)),
+             hjust = 0,
+             vjust = 1,
+             size = 8,
+             color = "black") +
+    labs(x = xtitle,
+         y = "% handing out flyer",
+         color = "Condition") +
+    scale_color_manual(values = c("no feedback" = "#377EB8",
+                                  "feedback" = "#4DAF4A",
+                                  "people inference (novice)" = "#8E13A1",
+                                  "data composition" = "#E41A1C",
+                                  "people inference (expert)" = "#DF8FEB")) +
+    scale_x_continuous(breaks = seq(0, 1, 0.25),
+                       limits = c(0, 1),
+                       labels = percent) +
+    scale_y_continuous(breaks = seq(0, 1, 0.25),
+                       limits = c(0, 1),
+                       labels = percent) +
+    theme(axis.title.x = element_text(hjust = 0.5, size = 30),
+          axis.title.y = element_text(hjust = 0.5, size = 30),
+          axis.text = element_text(size = 26),
+          plot.margin = margin(r = 0.5, unit = "cm"),
+          legend.text = element_text(size = 30),
+          legend.title = element_text(size = 30))
+
+  if(!ytitle){
+    plot = plot +
+      theme(axis.title.y = element_blank())
+  }
+  if(!legend){
+    plot = plot +
+      theme(legend.position = "none")
+  }
+
+  return(plot)
+}
+
+plot_1 = fun.scatterplot(prediction = "experimental_data",
+                         data = df.plot,
+                         xtitle = "Experimental model",
+                         ytitle = T,
+                         legend = F)
+
+plot_2 = fun.scatterplot(prediction = "observational_data",
+                         data = df.plot,
+                         xtitle = "Observational model",
+                         ytitle = F,
+                         legend = F)
+
+plot_3 = fun.scatterplot(prediction = "strength_all",
+                         data = df.plot,
+                         xtitle = "Full model",
+                         ytitle = T,
+                         legend = F)
+
+plot_4 = fun.scatterplot(prediction = "strength_both",
+                         data = df.plot,
+                         xtitle = expression(Delta*P~"combined model"),
+                         ytitle = F,
+                         legend = F)
+
+plot_5 = fun.scatterplot(prediction = "usm",
+                         data = df.plot,
+                         xtitle = "Counterfactual decision model",
+                         ytitle = F,
+                         legend = T)
+
+plot_1 + plot_2 + plot_3 + plot_4 + plot_5 + guide_area() +
+  plot_layout(ncol = 3,
+              guides = "collect") &
+  plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold",
+                                size = 40))
+
+ggsave("../../figures/plots/model_scatter.pdf",
+        width = 24,
+        height = 12)
+```
+
+## Table 3: Model comparison
+
+$r$ and RMSE are computed on the trial means from the posterior means of the mixed effects models; $\Delta$elpd comes from `loo_compare()`.
+
+```{r}
+fun.model_comparison = function(df.regression,
+                                fit.full, fit.observational, fit.deltap,
+                                fit.experimental, fit.cdm){
+  df.regression %>%
+    select(trial, response) %>%
+    bind_cols(fit.full %>%
+                fitted(newdata = df.regression, re_formula = NA) %>%
+                as_tibble() %>%
+                select(full = Estimate)) %>%
+    bind_cols(fit.observational %>%
+                fitted(newdata = df.regression, re_formula = NA) %>%
+                as_tibble() %>%
+                select(observational = Estimate)) %>%
+    bind_cols(fit.deltap %>%
+                fitted(newdata = df.regression %>%
+                         mutate(strength_observation_brm = pyx - pyxp,
+                                strength_experiment_brm = pydox - pydoxp),
+                       re_formula = NA) %>%
+                as_tibble() %>%
+                select(deltap = Estimate)) %>%
+    bind_cols(fit.experimental %>%
+                fitted(newdata = df.regression, re_formula = NA) %>%
+                as_tibble() %>%
+                select(experimental = Estimate)) %>%
+    bind_cols(fit.cdm %>%
+                fitted(newdata = df.regression, re_formula = NA) %>%
+                as_tibble() %>%
+                select(usm = Estimate)) %>%
+    summarize(across(.cols = -c(trial, response),
+                     .fns = list(r = ~ cor(., response),
+                                 rmse = ~ sqrt(mean((. - response)^2))))) %>%
+    pivot_longer(cols = everything(),
+                 names_to = c("model", "name"),
+                 names_sep = "_") %>%
+    pivot_wider() %>%
+    mutate(across(.cols = c(r, rmse),
+                  .fns = ~ round(., 2))) %>%
+    left_join(loo_compare(fit.cdm,
+                          fit.deltap,
+                          fit.full,
+                          fit.observational,
+                          fit.experimental) %>%
+                as_tibble(rownames = "model") %>%
+                mutate(model = factor(model,
+                                      levels = c("fit.experimental",
+                                                 "fit.observational",
+                                                 "fit.full",
+                                                 "fit.deltap",
+                                                 "fit.cdm"),
+                                      labels = c("experimental",
+                                                 "observational",
+                                                 "full",
+                                                 "deltap",
+                                                 "usm"))) %>%
+                select(model, elpd_diff, se_diff) %>%
+                mutate(across(.cols = -model,
+                              .fns = ~ round(., 1))) %>%
+                mutate(delta_elpd = str_c(elpd_diff, " (", se_diff, ")")) %>%
+                select(model, delta_elpd),
+              by = "model") %>% 
+    mutate(model = factor(model,
+                          levels = c("experimental",
+                                     "observational",
+                                     "full",
+                                     "deltap",
+                                     "usm"))) %>% 
+    arrange(model)
+}
+
+df.model_comparison.no_feedback = fun.model_comparison(
+  df.exp1.regression_bayesian,
+  fit.exp1.strength_all_brm, fit.exp1.observational_data_brm,
+  fit.exp1.strength_both_brm, fit.exp1.experimental_data_brm, fit.exp1.usm_brm)
+
+df.model_comparison.feedback = fun.model_comparison(
+  df.exp2.regression_bayesian,
+  fit.exp2.strength_all_brm, fit.exp2.observational_data_brm,
+  fit.exp2.strength_both_brm, fit.exp2.experimental_data_brm, fit.exp2.usm_brm)
+
+df.model_comparison.people_inference_novice = fun.model_comparison(
+  df.exp3.regression_bayesian,
+  fit.exp3.strength_all_brm, fit.exp3.observational_data_brm,
+  fit.exp3.strength_both_brm, fit.exp3.experimental_data_brm, fit.exp3.usm_brm)
+
+df.model_comparison.data_composition = fun.model_comparison(
+  df.exp4.regression_bayesian,
+  fit.exp4.strength_all_brm, fit.exp4.observational_data_brm,
+  fit.exp4.strength_both_brm, fit.exp4.experimental_data_brm, fit.exp4.usm_brm)
+
+df.model_comparison.people_inference_expert = fun.model_comparison(
+  df.exp5.regression_bayesian,
+  fit.exp5.strength_all_brm, fit.exp5.observational_data_brm,
+  fit.exp5.strength_both_brm, fit.exp5.experimental_data_brm, fit.exp5.usm_brm)
+
+df.model_comparison.no_feedback %>%
+  rename_with(.cols = -model,
+              .fn = ~ str_c("no_feedback_", .)) %>%
+  left_join(df.model_comparison.feedback %>%
+              rename_with(.cols = -model,
+                          .fn = ~ str_c("feedback_", .)),
+            by = "model") %>%
+  left_join(df.model_comparison.data_composition %>%
+              rename_with(.cols = -model,
+                          .fn = ~ str_c("data_composition_", .)),
+            by = "model") %>%
+  left_join(df.model_comparison.people_inference_novice %>%
+              rename_with(.cols = -model,
+                          .fn = ~ str_c("people_inference_novice_", .)),
+            by = "model") %>%
+  left_join(df.model_comparison.people_inference_expert %>%
+              rename_with(.cols = -model,
+                          .fn = ~ str_c("people_inference_expert_", .)),
+            by = "model") %>%
+  mutate(across(.cols = ends_with("_r"),
+                .fns = ~ rd(., digits = 2))) %>%
+  arrange(model) %>% 
+  print_table(format = "latex")
+```
+
+## Footnote: how well can the CDM be approximated by a linear model?
+
+> "Even if all five free parameters in the `full' model are fitted, it still
+> only correlates $r = .71$ with the predictions of the CDM."
+
+$r$ is the square root of $R^2$ from regressing the normative expected benefit on the four probabilities.
+
+```{r}
+fit.cdm_from_data = lm(formula = cf_mean ~ 1 + pydox + pydoxp + pyx + pyxp,
+                       data = df.exp1.model)
+
+tibble(r.squared = summary(fit.cdm_from_data)$r.squared) %>%
+  mutate(r = sqrt(r.squared)) %>%
+  print_table()
+```
+
+# EXPERIMENT 2: Inferring counterfactual types before making decisions
+
+## Participants
+
+```{r}
+df.exp3and4.demographics = bind_rows(
+  df.exp3.demographics %>% mutate(experiment = "people inference (novice)"),
+  df.exp4.demographics %>% mutate(experiment = "data composition"))
+
+df.exp3and4.demographics %>% count(experiment) %>% print_table()
+
+df.exp3and4.demographics %>%
+  summarize(n = n(),
+            age.mean = mean(age, na.rm = T),
+            age.sd = sd(age, na.rm = T)) %>%
+  print_table()
+
+df.exp3and4.demographics %>% 
+	count(gender) %>% 
+	print_table()
+
+df.exp3and4.demographics %>% 
+  count(race) %>% 
+  print_table() 
+
+df.exp3and4.demographics %>%
+  summarize(duration.mean = mean(time / 60000, na.rm = T),
+            duration.sd = sd(time / 60000, na.rm = T)) %>%
+  print_table()
+```
+
+## Table 4 (top panel): Predictors of novices' people inferences
+
+Separate Bayesian linear mixed effects models per person type. $r$ and RMSE are computed on trial means.
+
+```{r}
+df.model = df.exp3.model %>%
+  select(trial, pyx, pyxp, pydox, pydoxp) %>%
+  mutate(across(.cols = -trial,
+                .fns = ~ scale(.)))
+
+df.inferences = df.exp3.response_long %>%
+  select(participant, trial, type, value) %>%
+  left_join(df.model, by = "trial")
+
+brm.inferences.compliers = brm(value ~ 1 + pyx + pyxp + pydox + pydoxp + (1 | participant),
+  data = df.inferences %>% filter(type == "compliers"),
+  family = gaussian(),
+  cores = 4,
+  seed = 1,
+  file = "models/inferences_compliers")
+
+brm.inferences.always = brm(value ~ 1 + pyx + pyxp + pydox + pydoxp + (1 | participant),
+  data = df.inferences %>% filter(type == "always"),
+  family = gaussian(),
+  cores = 4,
+  seed = 1,
+  file = "models/inferences_always")
+
+brm.inferences.never = brm(value ~ 1 + pyx + pyxp + pydox + pydoxp + (1 | participant),
+  data = df.inferences %>% filter(type == "never"),
+  family = gaussian(),
+  cores = 4,
+  seed = 1,
+  file = "models/inferences_never")
+
+brm.inferences.defiers = brm(value ~ 1 + pyx + pyxp + pydox + pydoxp + (1 | participant),
+  data = df.inferences %>% filter(type == "defiers"),
+  family = gaussian(),
+  cores = 4,
+  seed = 1, 
+  file = "models/inferences_defiers")
+
+# Compute r and RMSE for trial means
+df.means = df.inferences %>%
+  group_by(trial, type) %>%
+  summarize(data = mean(value)) %>%
+  ungroup()
+
+df.predictions = brm.inferences.compliers %>%
+  fitted(newdata = df.model, re_formula = NA) %>%
+  as_tibble() %>%
+  mutate(trial = 1:n()) %>%
+  select(trial, compliers = Estimate) %>%
+  left_join(brm.inferences.always %>%
+              fitted(newdata = df.model,
+                     re_formula = NA) %>%
+              as_tibble() %>%
+              mutate(trial = 1:n()) %>%
+              select(trial, always = Estimate),
+            by = "trial") %>%
+  left_join(brm.inferences.never %>%
+              fitted(newdata = df.model, re_formula = NA) %>%
+              as_tibble() %>%
+              mutate(trial = 1:n()) %>%
+              select(trial, never = Estimate),
+            by = "trial") %>%
+  left_join(brm.inferences.defiers %>%
+              fitted(newdata = df.model, re_formula = NA) %>%
+              as_tibble() %>%
+              mutate(trial = 1:n()) %>%
+              select(trial, defiers = Estimate),
+            by = "trial") %>%
+  pivot_longer(cols = c(compliers, always, never, defiers),
+               names_to = "type",
+               values_to = "prediction") %>%
+  mutate(trial = as.factor(trial))
+
+df.combined = df.means %>%
+  left_join(df.predictions, by = c("trial", "type")) %>%
+  group_by(type) %>%
+  summarize(r = cor(data, prediction),
+            rmse = sqrt(mean((data - prediction)^2)))
+
+bind_rows(brm.inferences.compliers %>%
+            tidy() %>%
+            mutate(person = "compliers"),
+          brm.inferences.always %>%
+            tidy() %>%
+            mutate(person = "always"),
+          brm.inferences.never %>%
+            tidy() %>%
+            mutate(person = "never"),
+          brm.inferences.defiers %>%
+            tidy() %>%
+            mutate(person = "defiers")) %>%
+  filter(effect == "fixed") %>%
+  select(person, term, estimate, conf.low, conf.high) %>%
+  mutate(across(c(estimate, conf.low, conf.high),
+                ~ format(round(., 2), trim = T, digits = 2, nsmall = 2)),
+         label = str_c(estimate, " [", conf.low, ", ", conf.high, "]")) %>%
+  select(person, term, label) %>%
+  pivot_wider(names_from = term, values_from = label) %>%
+  left_join(df.combined, by = c("person" = "type")) %>%
+  relocate(pyx, pyxp, .after = pydoxp) %>%
+  print_table(digits = 2)
+```
+
+## Footnote: linear models predicting the normative person types
+
+> "$r(\text{complier}) = 0.47$, $r(\text{always-goer}) = 0.50$,
+> $r(\text{never-goer}) = 0.50$, $r(\text{defier}) = 0.42$"
+
+```{r}
+df.exp3.model %>%
+  left_join(df.exp3.benefits %>%
+              mutate(trial = as.factor(trial)),
+            by = "trial") %>%
+  select(trial, contains("py"), always:never) %>%
+  pivot_longer(cols = always:never) %>%
+  group_by(name) %>%
+  nest() %>%
+  mutate(fit = map(.x = data,
+                   .f = ~ lm(formula = value ~ 1 + pydox + pydoxp + pyx + pyxp,
+                             data = .)),
+         summary = map(.x = fit, .f = ~ glance(.))) %>%
+  ungroup() %>%
+  select(name, summary) %>%
+  unnest(summary) %>%
+  select(name, r.squared) %>%
+  mutate(r = r.squared ^ (1/2)) %>%
+  print_table()
+```
+
+## Correlation between normative and actual people inferences
+
+> "The correlation between the CDM's predictions and participants' inferences
+> was $r = .11$ [$-.10, .31$]."
+
+```{r}
+df.people_inference = df.exp3.long %>%
+  pivot_longer(cols = c(always, compliers, defiers, never),
+               names_to = "people",
+               values_to = "value") %>%
+  group_by(trial, people) %>%
+  summarize(data = mean(value)) %>%
+  ungroup() %>%
+  left_join(df.exp3.benefits_long %>%
+              select(trial, people = variable, prediction = value) %>%
+              mutate(trial = as.factor(trial)),
+            by = c("trial", "people"))
+
+cor.test(df.people_inference$data, df.people_inference$prediction)
+```
+
+## Figure 5: People inference vs. decisions
+
+```{r fig.height=6, fig.width=16, warning=FALSE, message=FALSE}
+set.seed(1)
+
+df.trial_selection = tibble(trial_ordered = c(8, 18, 17, 10, 11, 22),
+                            label = LETTERS[1:6])
+
+df.trial_labels = df.trial_mapping %>% 
+  left_join(df.trial_selection,
+            by = "trial_ordered") %>%
+  select(-trial_ordered) %>%
+  mutate(trial = factor(trial))
+
+# Plot 1: novices
+df.plot = df.exp3.long %>%
+  mutate(across(.cols = c(compliers, always, never, defiers),
+                .fns = ~ ./100)) %>%
+  mutate(empirical_benefit = compliers * 9.50 +
+           always * (-0.50) + never * (-0.50) + defiers * (-20.50)) %>%
+  group_by(trial) %>%
+  reframe(value = smean.cl.boot(empirical_benefit),
+          name = c("benefit_mean", "benefit_low", "benefit_high")) %>%
+  pivot_wider() %>%
+  left_join(df.exp3.long %>%
+              group_by(trial) %>%
+              reframe(value = smean.cl.boot(response),
+                      name = c("decision_mean", "decision_low", "decision_high")) %>%
+              pivot_wider(),
+            by = "trial") %>%
+  ungroup() %>%
+  left_join(df.exp3.model %>%
+              select(trial, optimal_decision),
+            by = "trial") %>%
+  mutate(optimal_decision = factor(optimal_decision,
+                                   levels = c(0, 1),
+                                   labels = c("don't hand out", "hand out"))) %>%
+  left_join(df.trial_labels,
+            by = "trial")
+
+fit = lm(formula = decision_mean ~ 1 + benefit_mean,
+         data = df.plot)
+
+text.r = rd(cor(df.plot$benefit_mean,
+           df.plot$decision_mean), 2)
+
+text.rmse = fit %>%
+  augment() %>%
+  summarize(100*sqrt(mean(.resid^2))) %>%
+  round(2) %>%
+  as.double()
+
+p1 = ggplot(data = df.plot,
+              mapping = aes(x = benefit_mean,
+                            y = decision_mean)) +
+  geom_hline(yintercept = 0.5,
+             linetype = "dashed",
+             alpha = 0.5) +
+  geom_vline(xintercept = 0,
+             linetype = "dashed",
+             alpha = 0.5) +
+  geom_smooth(method = "lm",
+              formula = y ~ x,
+              color = "#8E13A1",
+              fill = "#8E13A1",
+              fullrange = T) +
+  geom_linerange(mapping = aes(ymin = decision_low,
+                               ymax = decision_high),
+                 color = "black",
+                 alpha = 0.2) +
+  geom_linerange(mapping = aes(xmin = benefit_low,
+                               xmax = benefit_high),
+                 color = "black",
+                 alpha = 0.2) +
+  geom_point(mapping = aes(fill = optimal_decision),
+             size = 3,
+             shape = 21) +
+  geom_label_repel(mapping = aes(label = label),
+                   size = 4,
+                   box.padding = 0.7,
+                   label.padding = unit(0.35, "lines"),
+                   point.padding = 0.3,
+                   min.segment.length = 0) +
+  annotate(geom = "text",
+           x = -6.5,
+           y = 1,
+           label = str_c("r = ", text.r,
+                         "\nRMSE = ", text.rmse),
+           hjust = 0,
+           vjust = 1,
+           size = 8) +
+  labs(x = "empirical expected benefit",
+       y = "% handing out flyer",
+       fill = "optimal decision",
+       title = "novices") +
+  coord_cartesian(ylim = c(0, 1)) +
+  scale_x_continuous(breaks = seq(-6, 2, 2),
+                     limits = c(-6.5, 3)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25),
+                     labels = percent_format(scale = 100)) +
+  scale_fill_manual(values = c("#f0eae4", "#363b35")) +
+  theme(legend.position = c(0.8, 0.15))
+
+# Plot 2: experts
+df.plot = df.exp5.long %>%
+  pivot_wider(names_from = type,
+                values_from = value) %>%
+  mutate(across(.cols = c(compliers, always, never, defiers),
+                .fns = ~ ./100)) %>%
+  mutate(empirical_benefit = compliers * 9.50 +
+           always * (-0.50) + never * (-0.50) + defiers * (-20.50)) %>%
+  group_by(trial) %>%
+  reframe(value = smean.cl.boot(empirical_benefit),
+          name = c("benefit_mean", "benefit_low", "benefit_high")) %>%
+  pivot_wider() %>%
+  left_join(df.exp5.long %>%
+              pivot_wider(names_from = type,
+                values_from = value) %>%
+              group_by(trial) %>%
+              reframe(value = smean.cl.boot(response),
+                      name = c("decision_mean", "decision_low", "decision_high")) %>%
+              pivot_wider(),
+            by = "trial") %>%
+  ungroup() %>%
+  left_join(df.exp3.model %>%
+              select(trial, optimal_decision),
+            by = "trial") %>%
+  mutate(optimal_decision = factor(optimal_decision,
+                                   levels = c(0, 1),
+                                   labels = c("don't hand out", "hand out"))) %>%
+  left_join(df.trial_labels,
+            by = "trial")
+
+fit = lm(formula = decision_mean ~ 1 + benefit_mean,
+         data = df.plot)
+
+text.r = rd(cor(df.plot$benefit_mean,
+           df.plot$decision_mean), 2)
+
+text.rmse = fit %>%
+  augment() %>%
+  summarize(100*sqrt(mean(.resid^2))) %>%
+  round(2) %>%
+  as.double()
+
+p2 = ggplot(data = df.plot,
+              mapping = aes(x = benefit_mean,
+                            y = decision_mean)) +
+  geom_hline(yintercept = 0.5,
+             linetype = "dashed",
+             alpha = 0.5) +
+  geom_vline(xintercept = 0,
+             linetype = "dashed",
+             alpha = 0.5) +
+  geom_smooth(method = "lm",
+              formula = y ~ x,
+              color = "#DF8FEB",
+              fill = "#DF8FEB",
+              fullrange = T) +
+  geom_linerange(mapping = aes(ymin = decision_low,
+                               ymax = decision_high),
+                 color = "black",
+                 alpha = 0.2) +
+  geom_linerange(mapping = aes(xmin = benefit_low,
+                               xmax = benefit_high),
+                 color = "black",
+                 alpha = 0.2) +
+  geom_point(mapping = aes(fill = optimal_decision),
+             size = 3,
+             shape = 21) +
+  geom_label_repel(mapping = aes(label = label),
+                   size = 4,
+                   box.padding = 0.7,
+                   label.padding = unit(0.35, "lines"),
+                   point.padding = 0.3,
+                   min.segment.length = 0) +
+  annotate(geom = "text",
+           x = -6.5,
+           y = 1,
+           label = str_c("r = ", text.r,
+                         "\nRMSE = ", text.rmse),
+           hjust = 0,
+           vjust = 1,
+           size = 8) +
+  labs(x = "empirical expected benefit",
+       y = "% handing out flyer",
+       fill = "optimal decision",
+       title = "experts") +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_continuous(breaks = seq(-6, 2, 2),
+                     limits = c(-6.5, 3)) +
+  scale_y_continuous(labels = percent_format(scale = 100),
+                     breaks = seq(0, 1, by = 0.25)) +
+  scale_fill_manual(values = c("#f0eae4", "#363b35")) +
+  theme(legend.position = c(0.8, 0.15))
+
+p1 + p2 +
+  plot_layout(ncol = 2) &
+  plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold",
+                                size = 32))
+
+ggsave(file = "../../figures/plots/flyer_vs_expected_benefit.pdf",
+       width = 16,
+       height = 6)
+```
+
+# EXPERIMENT 3: Expert judgments
+
+## Participants
+
+```{r}
+# age
+df.exp5.demographics %>%
+  mutate(age = as.numeric(age)) %>%
+  summarize(n = n(),
+            age.mean = mean(age),
+            age.range = str_c(range(age)[1], "-", range(age)[2]),
+            age.sd = sd(age)) %>%
+  print_table()
+
+df.exp5.demographics %>% count(gender) %>% print_table()
+df.exp5.demographics %>% count(race) %>% print_table()
+df.exp5.demographics %>% count(ethnicity) %>% print_table()
+df.exp5.demographics %>% count(department) %>% print_table()
+df.exp5.demographics %>% count(degree) %>% print_table()
+df.exp5.demographics %>% count(causal_inference) %>% print_table()
+```
+
+## Are experts' inferences more accurate than novices'?
+
+> "In fact, experts had slightly higher errors in their inferences compared to
+> novices, although this difference was not credible (100.60, 95% CrI [$-$2.10,
+> 203.69])."
+
+```{r}
+df.inference_difference = df.exp3.long %>%
+  select(participant, trial, always, compliers, defiers, never) %>%
+  pivot_longer(cols = c(always, compliers, defiers, never),
+               names_to = "type") %>%
+  mutate(experiment = "novice",
+         participant = as.character(participant)) %>%
+  bind_rows(df.exp5.long %>%
+              select(participant, trial, type, value) %>%
+              mutate(experiment = "expert")) %>%
+  left_join(df.exp3.benefits %>%
+              pivot_longer(cols = c(always, compliers, defiers, never),
+                           names_to = "type",
+                           values_to = "model") %>%
+              mutate(trial = as.factor(trial)),
+            by = c("trial", "type")) %>%
+  mutate(type = factor(type,
+                       levels = c("compliers", "always", "never", "defiers")),
+         experiment = factor(experiment,
+                             levels = c("novice", "expert"))) %>%
+  arrange(participant, trial, type) %>%
+  mutate(error = (value - model)^2)
+
+fit.inference_difference_brm = brm(
+  formula = error ~ 1 + experiment + (1 | participant),
+  data = df.inference_difference,
+  family = gaussian(),
+  seed = 1,
+  cores = 4,
+  file = "models/inference_difference")
+
+fit.inference_difference_brm %>%
+  tidy() %>%
+  select(effect, term, estimate, contains("conf")) %>%
+  print_table()
+```
+
+## Aggregate people inferences (input to Table B1 and the correlations below)
+
+```{r}
+df.exp5.people_inference = df.exp5.long %>%
+  group_by(trial, type) %>%
+  summarize(mean = mean(value)) %>%
+  pivot_wider(names_from = type,
+                          values_from = mean) %>%
+              relocate(compliers, always, never, defiers) %>%
+              rename_with(.col = -trial,
+                          .fn = ~ str_c("expert_", .x))
+
+df.aggregate_inferences = df.exp3.model %>%
+  select(trial, pydox, pydoxp, pyx, pyxp, cf_mean) %>%
+  left_join(df.exp3.long %>%
+              select(participant, trial, always, compliers, defiers, never) %>%
+              pivot_longer(cols = c(always, compliers, defiers, never),
+                           names_to = "type") %>%
+              group_by(type, trial) %>%
+              summarize(mean = mean(value)) %>%
+              ungroup() %>%
+              pivot_wider(names_from = type,
+                          values_from = mean) %>%
+              relocate(compliers, always, never, defiers) %>%
+              rename_with(.col = -trial,
+                          .fn = ~ str_c("novice_", .x)),
+            by = "trial") %>%
+  left_join(df.exp5.people_inference,
+            by = "trial") %>%
+  left_join(df.exp3.benefits %>%
+              relocate(compliers, always, never, defiers) %>%
+              rename_with(.col = -trial,
+                          .fn = ~ str_c("model_", .x)) %>%
+              mutate(trial = as.factor(trial)),
+            by = "trial") %>%
+  relocate(contains("model"), .after = pyxp) %>%
+  mutate(across(c(contains("model"), contains("novice"), contains("expert")),
+                ~ ./100)) %>%
+  mutate(novice_benefit = 9.5 * novice_compliers +
+           (-0.5) * novice_always +
+           (-0.5) * novice_never +
+           (-20.5) * novice_defiers,
+         expert_benefit = 9.5 * expert_compliers +
+           (-0.5) * expert_always +
+           (-0.5) * expert_never +
+           (-20.5) * expert_defiers) %>%
+  left_join(df.trial_mapping,
+            by = "trial") %>%
+  relocate(trial_ordered, .after = trial) %>%
+  relocate(novice_benefit, .after = novice_defiers) %>%
+  select(-trial) %>%
+  arrange(trial_ordered)
+```
+
+## Correlations between novice, expert, and normative inferences
+
+> "Across all of the 22 trials, the novice and expert inferences were strongly
+> correlated ($r = .75$, RMSE $= 0.08$), but expert inferences were less
+> correlated with the normative inferences compared to novices (novices:
+> $r = .11$, RMSE $= 0.22$; experts: $r = .06$, RMSE $= 0.23$)."
+
+```{r}
+df.inference_comparison = df.aggregate_inferences %>%
+  select(trial_ordered, contains("model"), contains("novice"), contains("expert"), -contains("benefit")) %>%
+  pivot_longer(cols = -trial_ordered,
+               names_to = c("name", "type"),
+               names_sep = "_") %>%
+  pivot_wider()
+
+df.inference_comparison %>%
+  select(model, novice, expert) %>%
+  summarize(rmse_model.novice = sqrt(mean((model - novice)^2)),
+            rmse_model.expert = sqrt(mean((model - expert)^2)),
+            rmse_novice.expert = sqrt(mean((novice - expert)^2)),
+            r_model.novice = cor(model, novice),
+            r_model.expert = cor(model, expert),
+            r_novice.expert = cor(novice, expert)) %>%
+  pivot_longer(cols = everything(),
+               names_to = c("name", "model"),
+               names_sep = "_") %>%
+  pivot_wider() %>%
+  print_table()
+```
+
+## Table 4 (bottom panel): Predictors of experts' people inferences
+
+```{r}
+df.model = df.exp3.model %>%
+              select(trial, pyx, pyxp, pydox, pydoxp) %>%
+              mutate(across(.cols = -trial, .fns = ~ scale(.)))
+
+df.inferences = df.exp5.long %>%
+  select(participant, trial, type, value) %>%
+  left_join(df.model, by = "trial")
+
+brm.expert.inferences.compliers = brm(value ~ 1 + pyx + pyxp + pydox + pydoxp + (1 | participant),
+  data = df.inferences %>% filter(type == "compliers"),
+  family = gaussian(),
+  cores = 4,
+  seed = 1,
+  file = "models/expert_inferences_compliers")
+
+brm.expert.inferences.always = brm(value ~ 1 + pyx + pyxp + pydox + pydoxp + (1 | participant),
+  data = df.inferences %>% filter(type == "always"),
+  family = gaussian(),
+  cores = 4,
+  seed = 1,
+  file = "models/expert_inferences_always")
+
+brm.expert.inferences.never = brm(value ~ 1 + pyx + pyxp + pydox + pydoxp + (1 | participant),
+  data = df.inferences %>% filter(type == "never"),
+  family = gaussian(),
+  cores = 4,
+  seed = 1,
+  file = "models/expert_inferences_never")
+
+brm.expert.inferences.defiers = brm(value ~ 1 + pyx + pyxp + pydox + pydoxp + (1 | participant),
+  data = df.inferences %>% filter(type == "defiers"),
+  family = gaussian(),
+  cores = 4,
+  seed = 1,
+  file = "models/expert_inferences_defiers")
+
+# Compute r and RMSE for trial means
+df.means = df.inferences %>% # nolint: assignment_linter.
+  group_by(trial, type) %>%
+  summarize(data = mean(value)) %>%
+  ungroup()
+
+df.predictions = brm.expert.inferences.compliers %>% 
+  fitted(newdata = df.model, re_formula = NA) %>%
+  as_tibble() %>%
+  mutate(trial = 1:n()) %>%
+  select(trial, compliers = Estimate) %>%
+  left_join(brm.expert.inferences.always %>%
+              fitted(newdata = df.model, re_formula = NA) %>%
+              as_tibble() %>%
+              mutate(trial = 1:n()) %>%
+              select(trial, always = Estimate),
+            by = "trial") %>%
+  left_join(brm.expert.inferences.never %>%
+              fitted(newdata = df.model, re_formula = NA) %>%
+              as_tibble() %>%
+              mutate(trial = 1:n()) %>%
+              select(trial, never = Estimate),
+            by = "trial") %>%
+  left_join(brm.expert.inferences.defiers %>%
+              fitted(newdata = df.model, re_formula = NA) %>%
+              as_tibble() %>%
+              mutate(trial = 1:n()) %>%
+              select(trial, defiers = Estimate),
+            by = "trial") %>%
+  pivot_longer(cols = c(compliers, always, never, defiers),
+               names_to = "type",
+               values_to = "prediction") %>%
+  mutate(trial = as.factor(trial))
+
+df.combined = df.means %>%
+  left_join(df.predictions, by = c("trial", "type")) %>%
+  group_by(type) %>%
+  summarize(r = cor(data, prediction), rmse = sqrt(mean((data - prediction)^2)))
+
+bind_rows(brm.expert.inferences.compliers %>%
+            tidy() %>%
+            mutate(person = "compliers"),
+          brm.expert.inferences.always %>%
+            tidy() %>%
+            mutate(person = "always"),
+          brm.expert.inferences.never %>%
+            tidy() %>%
+            mutate(person = "never"),
+          brm.expert.inferences.defiers %>%
+            tidy() %>%
+            mutate(person = "defiers")) %>%
+  filter(effect == "fixed") %>%
+  select(person, term, estimate, conf.low, conf.high) %>%
+  mutate(across(c(estimate, conf.low, conf.high),
+                ~ format(round(., 2), trim = T, digits = 2, nsmall = 2)),
+         label = str_c(estimate, " [", conf.low, ", ", conf.high, "]")) %>%
+  select(person, term, label) %>%
+  pivot_wider(names_from = term, values_from = label) %>%
+  left_join(df.combined, by = c("person" = "type")) %>%
+  relocate(pyx, pyxp, .after = pydoxp) %>%
+  print_table(digits = 2)
+```
+
+# Appendix
+
+## Table B1: People inferences for each trial
+
+```{r}
+df.aggregate_inferences %>%
+  print_table()
+```
+
+## Table C1: Performance differences between conditions
+
+```{r}
+brm.bonuses = brm(bonus_no_cap ~ experiment,
+                  data = df.bonuses,
+                  family = gaussian(),
+                  seed = 1,
+                  file = "models/bonuses")
+
+brm.bonuses %>%
+  emmeans(specs = pairwise ~ experiment) %>%
+  summary(point.est = "mean") %>%
+  .[["contrasts"]] %>%
+  as_tibble() %>%
+  print_table()
+```
+
+## Table D1: Correlations between decisions across conditions
+
+```{r warning=FALSE, message=FALSE}
+condition_levels = c("No feedback",
+                    "Feedback",
+                    "Data composition",
+                    "People inference",
+                    "Experts")
+
+condition_labels = c("No feedback",
+                    "Feedback",
+                    "Data composition",
+                    "People inference (novice)",
+                    "People inference (expert)")
+
+bind_rows(df.exp1.long %>%
+            mutate(condition = "No feedback"),
+          df.exp2.long %>%
+            mutate(condition = "Feedback"),
+          df.exp3.long %>%
+            mutate(condition = "People inference"),
+          df.exp4.long %>%
+            mutate(condition = "Data composition")) %>% 
+  mutate(participant = as.character(participant)) %>%
+  bind_rows(df.exp5.long %>%
+              mutate(condition = "Experts")) %>% 
+  group_by(condition, trial) %>%
+  summarize(response = mean(response)) %>%
+  mutate(condition = factor(condition,
+                            levels = condition_levels,
+                            labels = condition_labels)) %>%
+  arrange(condition) %>%
+  pivot_wider(names_from = condition,
+              values_from = response) %>%
+  select(-trial) %>%
+  correlate(quiet = T) %>%
+  shave() %>%
+  slice_tail(n = 4) %>%
+  select(-`People inference (expert)`) %>%
+  fashion() %>%
+  set_names(c("", condition_labels[-length(condition_labels)])) %>%
+  print_table()
+```
+
+## Table E1 and Table E2: Expert performance by degree and familiarity with causal inference
+
+> "Finally, we explored whether there were any differences in performance in our
+> expert sample based on their degree (Table E1), or their self-rated familiarity
+> with causal inference (Table E2). We found no credible differences."
+
+```{r}
+# Table E1: performance as a function of degree
+df.exp5.bonuses %>%
+  left_join(df.exp5.demographics %>%
+              select(participant, degree),
+            by = "participant") %>%
+  mutate(degree = factor(degree, levels = c("Undergraduate student",
+                                            "Masters student",
+                                            "PhD student",
+                                            "Postdoc"))) %>%
+  group_by(degree) %>%
+  reframe(value = smean.cl.boot(bonus),
+          n = n(),
+          name = c("mean", "low", "high")) %>%
+  pivot_wider() %>%
+  mutate(across(.cols = c(mean, low, high),
+                .fns = ~ round(.x, 2))) %>%
+  mutate(value = str_c(mean, " [", low, ", ", high, "]"),
+         value = ifelse(is.na(value), mean, value)) %>%
+  select(degree, n, value) %>%
+  arrange(degree) %>%
+  print_table()
+
+# Table E2: performance as a function of familiarity with causal inference
+df.exp5.bonuses %>%
+  left_join(df.exp5.expertise,
+            by = "participant") %>%
+  group_by(causal_inference) %>%
+  reframe(value = smean.cl.boot(bonus),
+          n = n(),
+          name = c("mean", "low", "high")) %>%
+  pivot_wider() %>%
+  mutate(across(.cols = c(mean, low, high),
+                .fns = ~ round(.x, 2))) %>%
+  mutate(value = str_c(mean, " [", low, ", ", high, "]"),
+         causal_inference = factor(causal_inference,
+                                   levels = 1:4,
+                                   labels = c("not at all", "slightly", "somewhat", "very"))) %>%
+  select(causal_inference, n, value) %>%
+  print_table()
+```
+
+# Session info
+
+```{r, echo=F}
+sessionInfo()
+```
