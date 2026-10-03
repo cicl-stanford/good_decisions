@@ -1290,6 +1290,38 @@ plot = ggplot(data = df.bonuses,
         axis.text = element_text(size = 15),
         plot.margin = margin(l = 0, unit = "cm"))
 
+# bootstrapped 95% CIs of the mean per condition
+df.bonuses.ci = df.bonuses %>%
+  group_by(experiment) %>%
+  reframe(value = smean.cl.boot(bonus_no_cap),
+          name = c("mean", "low", "high")) %>%
+  pivot_wider()
+
+# take the computed density curves so that the CI ribbons end exactly on them
+df.ci_ribbons = layer_data(plot, i = 2) %>%
+  filter(datatype == "ridgeline") %>%
+  mutate(experiment = factor(levels(df.bonuses$experiment)[group],
+                             levels = levels(df.bonuses$experiment))) %>%
+  left_join(df.bonuses.ci,
+            by = "experiment") %>%
+  group_by(experiment) %>%
+  reframe(x_ci = c(first(low), x[x > first(low) & x < first(high)], first(high)),
+          ymax = approx(x, ymax, xout = x_ci)$y,
+          ymin = first(ymin)) %>%
+  rename(x = x_ci)
+
+# insert the CI ribbons underneath the densities (drawn on top of the
+# semi-transparent density fill, so they appear as a darker shade)
+plot$layers = append(plot$layers,
+                     list(geom_ribbon(data = df.ci_ribbons,
+                                      mapping = aes(x = x,
+                                                    ymin = ymin,
+                                                    ymax = ymax,
+                                                    fill = experiment),
+                                      inherit.aes = FALSE,
+                                      alpha = 0.35)),
+                     after = 1)
+
 plot
 
 ggsave(file = "../../figures/plots/bonuses.pdf",
@@ -2043,8 +2075,8 @@ p1 = ggplot(data = df.plot,
        fill = "optimal decision",
        title = "novices") +
   coord_cartesian(ylim = c(0, 1)) +
-  scale_x_continuous(breaks = seq(-6, 2, 2),
-                     limits = c(-6.5, 3)) +
+  scale_x_continuous(breaks = seq(-6, 4, 2),
+                     limits = c(-6.5, 4)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.25),
                      labels = percent_format(scale = 100)) +
   scale_fill_manual(values = c("#f0eae4", "#363b35")) +
@@ -2136,8 +2168,8 @@ p2 = ggplot(data = df.plot,
        fill = "optimal decision",
        title = "experts") +
   coord_cartesian(ylim = c(0, 1))+
-  scale_x_continuous(breaks = seq(-6, 2, 2),
-                     limits = c(-6.5, 3)) +
+  scale_x_continuous(breaks = seq(-6, 4, 2),
+                     limits = c(-6.5, 4)) +
   scale_y_continuous(labels = percent_format(scale = 100),
                      breaks = seq(0, 1, by = 0.25)) +
   scale_fill_manual(values = c("#f0eae4", "#363b35")) +
