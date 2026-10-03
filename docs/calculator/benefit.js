@@ -68,29 +68,30 @@
     // Consistency: P(x, y) <= P(y_x) <= 1 - P(x, y') and likewise for x'.
     if (Pxy > Pyx + EPS || Pyx > 1 - Pxyp + EPS) {
       errors.push(
-        `Observational and experimental data are inconsistent: need P(x,y) ≤ P(y_x) ≤ 1 − P(x,y'), ` +
+        `Observational and experimental data are inconsistent: need P(x,y) ≤ P(y<sub>x</sub>) ≤ 1 − P(x,y'), ` +
           `i.e. ${fmt(Pxy)} ≤ ${fmt(Pyx)} ≤ ${fmt(1 - Pxyp)}.`
       );
     }
     if (Pxpy > Pyxp + EPS || Pyxp > 1 - Pxpyp + EPS) {
       errors.push(
-        `Observational and experimental data are inconsistent: need P(x',y) ≤ P(y_x') ≤ 1 − P(x',y'), ` +
+        `Observational and experimental data are inconsistent: need P(x',y) ≤ P(y<sub>x'</sub>) ≤ 1 − P(x',y'), ` +
           `i.e. ${fmt(Pxpy)} ≤ ${fmt(Pyxp)} ≤ ${fmt(1 - Pxpyp)}.`
       );
     }
 
-    // Tian-Pearl bounds on P(benefit)
+    // Tian-Pearl bounds on P(benefit). Labels are HTML: they are rendered in the
+    // calculator's explanation table.
     const lowerTerms = [
       { label: "0", value: 0 },
-      { label: "P(y_x) − P(y_x')", value: ATE },
-      { label: "P(y) − P(y_x')", value: Py - Pyxp },
-      { label: "P(y_x) − P(y)", value: Pyx - Py },
+      { label: "P(y<sub>x</sub>) − P(y<sub>x'</sub>)", value: ATE },
+      { label: "P(y) − P(y<sub>x'</sub>)", value: Py - Pyxp },
+      { label: "P(y<sub>x</sub>) − P(y)", value: Pyx - Py },
     ];
     const upperTerms = [
-      { label: "P(y_x)", value: Pyx },
-      { label: "P(y'_x')", value: 1 - Pyxp },
+      { label: "P(y<sub>x</sub>)", value: Pyx },
+      { label: "P(y'<sub>x'</sub>)", value: 1 - Pyxp },
       { label: "P(x,y) + P(x',y')", value: Pxy + Pxpyp },
-      { label: "P(y_x) − P(y_x') + P(x,y') + P(x',y)", value: ATE + Pxyp + Pxpy },
+      { label: "P(y<sub>x</sub>) − P(y<sub>x'</sub>) + P(x,y') + P(x',y)", value: ATE + Pxyp + Pxpy },
     ];
     const pnsLo = Math.max(...lowerTerms.map((t) => t.value));
     const pnsHi = Math.min(...upperTerms.map((t) => t.value));
