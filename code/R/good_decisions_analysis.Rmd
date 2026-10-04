@@ -1627,13 +1627,13 @@ plot_2 = fun.scatterplot(prediction = "observational_data",
 plot_3 = fun.scatterplot(prediction = "strength_all",
                          data = df.plot,
                          xtitle = "Full model",
-                         ytitle = T,
+                         ytitle = F,
                          legend = F)
 
 plot_4 = fun.scatterplot(prediction = "strength_both",
                          data = df.plot,
                          xtitle = expression(Delta*P~"combined model"),
-                         ytitle = F,
+                         ytitle = T,
                          legend = F)
 
 plot_5 = fun.scatterplot(prediction = "usm",
@@ -2173,7 +2173,8 @@ p2 = ggplot(data = df.plot,
   scale_y_continuous(labels = percent_format(scale = 100),
                      breaks = seq(0, 1, by = 0.25)) +
   scale_fill_manual(values = c("#f0eae4", "#363b35")) +
-  theme(legend.position = c(0.8, 0.15))
+  theme(legend.position = c(0.8, 0.15),
+        axis.title.y = element_blank())
 
 p1 + p2 +
   plot_layout(ncol = 2) &
