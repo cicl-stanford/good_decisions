@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expected benefit calculator</title>
+<style>
+  :root {
+    --ink: #1d1d1f;
+    --ink-2: #555;
+    --ink-3: #888;
+    --line: #d6d9de;
+    --panel: #e9effa;
+    --panel-border: #8eaadb;
+    --accent: #2f5aa8;
+    --good: #1e7a3c;
+    --bad: #b3261e;
+    --warn-bg: #fff4e5;
+    --err-bg: #fdecea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px; line-height: 1.45; background: #fafbfc;
+  }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  p.lede { margin: 0 0 20px; color: var(--ink-2); max-width: 70em; }
+  .layout { display: grid; grid-template-columns: 390px 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .card .hint { color: var(--ink-3); font-size: 13px; margin: 6px 0 0; }
+  table.grid { border-collapse: collapse; width: 100%; }
+  table.grid th, table.grid td { padding: 4px 6px; text-align: center; font-size: 14px; }
+  table.grid th { font-weight: 600; color: var(--ink-2); }
+  table.grid th.row { text-align: left; }
+  table.grid td.norm { color: var(--ink-3); font-size: 12px; text-align: left; }
+  input[type=number] { width: 80px; padding: 4px 6px; font: inherit; border: 1px solid var(--line); border-radius: 4px; text-align: right; }
+  input[type=number]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  select { font: inherit; padding: 4px; border-radius: 4px; border: 1px solid var(--line); width: 100%; }
+  .figure { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 16px; }
+  .figure svg { width: 100%; height: auto; display: block; }
+  .figure .hint { color: var(--ink-3); font-size: 13px; margin: 4px 8px; }
+  .slot { cursor: pointer; }
+  .slot:hover .hover-ring { stroke: var(--accent); stroke-width: 3; }
+  .headline { display: flex; flex-wrap: wrap; gap: 24px; align-items: baseline; }
+  .headline .big { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .headline .range { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-weight: 600; font-size: 14px; border: 1.5px solid currentColor; }
+  .badge.act { color: var(--good); }
+  .badge.dont { color: var(--bad); }
+  .badge.neutral { color: var(--ink-2); }
+  .note { color: var(--ink-2); font-size: 14px; margin-top: 6px; }
+  .msg { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
+  .msg.err { background: var(--err-bg); color: var(--bad); }
+  table.types { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  table.types th, table.types td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; font-size: 14px; }
+  table.types th:first-child, table.types td:first-child, table.types td.desc { text-align: left; }
+  table.types th { color: var(--ink-2); font-weight: 600; }
+  table.types td.desc { color: var(--ink-2); font-size: 13px; }
+  table.types tfoot td { font-weight: 700; border-bottom: none; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  table.terms { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin: 6px 0 12px; }
+  table.terms td { padding: 2px 10px 2px 0; }
+  table.terms tr.active td { font-weight: 700; color: var(--accent); }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+  .chart-tip { position: fixed; pointer-events: none; background: #1d1d1f; color: #fff; padding: 6px 8px; border-radius: 4px; font-size: 12px; display: none; z-index: 10; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>Expected benefit of acting</h1>
+<p class="lede">
+  Enter experimental and observational data, and the reward (or cost) of acting on each counterfactual
+  type. The calculator combines both data sources to bound the proportion of each type, using the
+  Tian&ndash;Pearl bounds as presented in
+  <a href="https://arxiv.org/abs/2208.09558" target="_blank" rel="noopener">Mueller &amp; Pearl (2022)</a>,
+  and returns the expected benefit of handing out the flyer (acting) rather than not.
+</p>
+
+<div class="layout">
+  <div>
+    <div class="card">
+      <h2>Preset</h2>
+      <select id="preset"></select>
+    </div>
+
+    <div class="card">
+      <h2>Experimental data <span style="font-weight:400;color:var(--ink-2)">(flyer handed out)</span></h2>
+      <table class="grid">
+        <tr><th></th><th>P(ticket)</th><th></th></tr>
+        <tr><th class="row">with flyer</th>
+          <td><input type="number" id="exp-x" min="0" max="1" step="0.1"></td>
+          <td class="norm">P(y | do(x))</td></tr>
+        <tr><th class="row">without flyer</th>
+          <td><input type="number" id="exp-xp" min="0" max="1" step="0.1"></td>
+          <td class="norm">P(y | do(x'))</td></tr>
+      </table>
+      <p class="hint">Chance of getting a ticket when the flyer is randomly handed out or withheld.</p>
+    </div>
+    <div class="card">
+      <h2>Observational data <span style="font-weight:400;color:var(--ink-2)">(flyer obtainable)</span></h2>
+      <table class="grid">
+        <tr><th></th><th>P(ticket)</th><th></th></tr>
+        <tr><th class="row">with flyer</th>
+          <td><input type="number" id="obs-x" min="0" max="1" step="0.1"></td>
+          <td class="norm">P(y | x)</td></tr>
+        <tr><th class="row">without flyer</th>
+          <td><input type="number" id="obs-xp" min="0" max="1" step="0.1"></td>
+          <td class="norm">P(y | x')</td></tr>
+      </table>
+      <p class="hint">Chance of getting a ticket among people who chose to take the flyer, and among those who didn't. Half of the people are assumed to take the flyer, P(x) = 0.5, as in the experiments.</p>
+    </div>
+    <div class="card">
+      <h2>Reward of acting, per type</h2>
+      <table class="grid">
+        <tr><th class="row">complier</th><td><input type="number" id="r-complier" step="0.5"></td><td class="norm">ticket only with flyer</td></tr>
+        <tr><th class="row">always-goer</th><td><input type="number" id="r-always" step="0.5"></td><td class="norm">ticket either way</td></tr>
+        <tr><th class="row">never-goer</th><td><input type="number" id="r-never" step="0.5"></td><td class="norm">never a ticket</td></tr>
+        <tr><th class="row">defier</th><td><input type="number" id="r-defier" step="0.5"></td><td class="norm">ticket only without flyer</td></tr>
+      </table>
+      <p class="hint">The defaults are the experiment's payoffs: +$10 for a returning customer, &minus;$20 for a
+        discouraged customer, &minus;$0.50 per flyer. That gives complier 9.5, always-goer &minus;0.5,
+        never-goer &minus;0.5, defier &minus;20.5.</p>
+    </div>
+  </div>
+
+  <div>
+    <div class="figure">
+      <svg id="fig" viewBox="0 0 1200 540" role="img" aria-label="Experimental and observational data"></svg>
+      <p class="hint">Each row shows 10 people. Click a slot to set how many of them got a ticket. Partial
+        tickets show fractional values.</p>
+    </div>
+
+    <div class="card" id="results"></div>
+  </div>
+</div>
+
+<div class="chart-tip" id="tip"></div>
+
+<script src="benefit.js"></script>
+<script>
+(function () {
+  const NS = "http://www.w3.org/2000/svg";
+  const DEFAULT_REWARDS = { complier: 9.5, always: -0.5, never: -0.5, defier: -20.5 };
+
+  // Trials from Table 1 of the manuscript (ordered by expected benefit):
+  // label, P(y|do(x)), P(y|do(x')), P(y|x), P(y|x'), expected benefit.
+  // Observational P(x) = 0.5. (A)-(F) refer to Figure 2, [A]-[F] to Figure 6.
+  const TRIALS = [
+    ["1 [C]", 0.5, 0.5, 0.0, 0.0, -5.5],
+    ["2 [A]", 0.5, 0.5, 1.0, 1.0, -5.5],
+    ["3", 0.5, 0.4, 0.0, 0.0, -3.5],
+    ["4", 0.6, 0.5, 0.2, 0.0, -3.5],
+    ["5", 0.6, 0.5, 1.0, 1.0, -3.5],
+    ["6", 0.6, 0.4, 0.2, 0.0, -2.0],
+    ["7 [E]", 0.7, 0.5, 0.4, 0.0, -1.5],
+    ["8 (A)", 0.7, 0.5, 1.0, 1.0, -1.5],
+    ["9", 0.5, 0.3, 0.0, 0.0, -1.5],
+    ["10 (D), [D]", 0.5, 0.5, 0.0, 1.0, -0.5],
+    ["11 (E), [B]", 0.5, 0.5, 1.0, 0.0, -0.5],
+    ["12", 0.5, 0.4, 1.0, 0.0, 0.5],
+    ["13", 0.6, 0.5, 0.2, 1.0, 0.5],
+    ["14", 0.6, 0.5, 1.0, 0.0, 0.5],
+    ["15", 0.5, 0.2, 0.0, 0.0, 0.5],
+    ["16", 0.6, 0.4, 1.0, 0.0, 1.5],
+    ["17 (C), [F]", 0.7, 0.5, 0.4, 1.0, 1.5],
+    ["18 (B)", 0.7, 0.5, 1.0, 0.0, 1.5],
+    ["19", 0.5, 0.3, 1.0, 0.0, 1.5],
+    ["20", 0.7, 0.3, 1.0, 0.6, 1.5],
+    ["21", 0.5, 0.2, 1.0, 0.0, 2.5],
+    ["22 (F)", 0.7, 0.3, 1.0, 0.0, 3.5],
+  ];
+
+  const state = {
+    exp: { x: 0, xp: 0 }, // P(y | do(x)), P(y | do(x'))
+    obs: { x: 0, xp: 0 }, // P(y | x), P(y | x'); P(x) = 0.5
+    rewards: { ...DEFAULT_REWARDS },
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const round = (x, d = 3) => Math.round(x * 10 ** d) / 10 ** d;
+  const fmtP = (x) => round(x, 3).toFixed(2).replace(/^-0\.00$/, "0.00");
+  const fmtB = (x) => {
+    const v = round(x, 4);
+    const s = Math.abs(v).toFixed(2);
+    return (v < 0 && s !== "0.00" ? "−" : "") + s;
+  };
+
+  // ---------- presets ----------
+  function loadTrial(i) {
+    const [, pydx, pydxp, pyx, pyxp] = TRIALS[i];
+    state.obs = { x: pyx, xp: pyxp };
+    state.exp = { x: pydx, xp: pydxp };
+  }
+  const presetSel = $("preset");
+  presetSel.innerHTML =
+    '<option value="custom">Custom</option>' +
+    TRIALS.map((t, i) => `<option value="${i}">Trial ${t[0]} \u2014 benefit ${fmtB(t[5])}</option>`).join("");
+  presetSel.addEventListener("change", () => {
+    if (presetSel.value === "custom") return;
+    loadTrial(+presetSel.value);
+    syncInputs();
+    update();
+  });
+
+  // ---------- inputs ----------
+  const inputMap = [];
+  for (const src of ["exp", "obs"]) {
+    for (const k of ["x", "xp"]) inputMap.push([`${src}-${k}`, src, k]);
+  }
+  for (const k of ["complier", "always", "never", "defier"]) inputMap.push([`r-${k}`, "rewards", k]);
+
+  function syncInputs() {
+    for (const [id, src, k] of inputMap) $(id).value = state[src][k];
+  }
+  for (const [id, src, k] of inputMap) {
+    $(id).addEventListener("input", (e) => {
+      const v = parseFloat(e.target.value);
+      state[src][k] = Number.isFinite(v) ? v : NaN;
+      if (src !== "rewards") presetSel.value = "custom";
+      update();
+    });
+  }
+
+  // ---------- figure ----------
+  function el(name, attrs = {}, parent) {
+    const node = document.createElementNS(NS, name);
+    for (const a in attrs) node.setAttribute(a, attrs[a]);
+    if (parent) parent.appendChild(node);
+    return node;
+  }
+
+  const TICKET_PATH =
+    "M -31,-17 H 31 A 6 6 0 0 0 37,-11 V 11 A 6 6 0 0 0 31,17 H -31 A 6 6 0 0 0 -37,11 V -11 A 6 6 0 0 0 -31,-17 Z";
+
+  function drawTicket(parent) {
+    el("path", { d: TICKET_PATH, fill: "#FFD966", stroke: "#222", "stroke-width": 1.8 }, parent);
+    el("line", { x1: -27, y1: -13, x2: -27, y2: 13, stroke: "#222", "stroke-width": 1.2, "stroke-dasharray": "2 2.5" }, parent);
+    el("line", { x1: 27, y1: -13, x2: 27, y2: 13, stroke: "#222", "stroke-width": 1.2, "stroke-dasharray": "2 2.5" }, parent);
+    const t = el("text", {
+      x: 0, y: 5, "text-anchor": "middle", "font-family": "Arial, sans-serif",
+      "font-size": 14, "font-weight": 700, fill: "#222", "letter-spacing": 0.5,
+    }, parent);
+    t.textContent = "TICKET";
+  }
+
+  function drawEmpty(parent) {
+    el("rect", {
+      x: -35, y: -17, width: 70, height: 34, rx: 15, fill: "#e6e6e6",
+      stroke: "#333", "stroke-width": 1.5, "stroke-dasharray": "3.5 3",
+    }, parent);
+  }
+
+  let clipCounter = 0;
+  function drawSlot(parent, cx, cy, fill, onClick) {
+    const g = el("g", { class: "slot", transform: `translate(${cx},${cy})` }, parent);
+    el("rect", { x: -40, y: -38, width: 80, height: 76, fill: "transparent" }, g); // hit target
+    const inner = el("g", { transform: "rotate(-35)" }, g);
+    el("path", { d: TICKET_PATH, fill: "none", stroke: "none", class: "hover-ring" }, inner);
+    if (fill >= 0.999) {
+      drawTicket(inner);
+    } else {
+      drawEmpty(inner);
+      if (fill > 0.001) {
+        const id = `clip${clipCounter++}`;
+        const cp = el("clipPath", { id }, inner);
+        el("rect", { x: -40, y: -20, width: 3 + 74 * fill, height: 40 }, cp);
+        const part = el("g", { "clip-path": `url(#${id})` }, inner);
+        drawTicket(part);
+      }
+    }
+    // hover ring drawn last so it's visible on top
+    inner.appendChild(inner.querySelector(".hover-ring"));
+    g.addEventListener("click", onClick);
+  }
+
+  function drawPerson(parent, cx, cy, withFlyer) {
+    const g = el("g", { transform: `translate(${cx},${cy})` }, parent);
+    el("path", {
+      d: "M -34,48 V 22 C -34,4 -20,-4 0,-4 C 20,-4 34,4 34,22 V 48 Z",
+      fill: "#e3e3e3", stroke: "#555", "stroke-width": 2,
+    }, g);
+    el("circle", { cx: 0, cy: -26, r: 20, fill: "#e3e3e3", stroke: "#555", "stroke-width": 2 }, g);
+    if (withFlyer) {
+      el("path", {
+        d: "M 20,2 H 56 L 62,8 V 56 H 20 Z", fill: "#fff", stroke: "#222", "stroke-width": 2,
+      }, g);
+      el("path", { d: "M 56,2 V 8 H 62", fill: "none", stroke: "#222", "stroke-width": 1.5 }, g);
+    }
+  }
+
+  function text(parent, x, y, str, attrs = {}) {
+    const t = el("text", {
+      x, y, "text-anchor": "middle", "font-family": "Arial, sans-serif", fill: "#111", ...attrs,
+    }, parent);
+    t.textContent = str;
+    return t;
+  }
+
+  // conditional P(ticket | row) for each panel row
+  function rowProbs() {
+    const clamp = (v) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0);
+    return {
+      exp: [clamp(state.exp.x), clamp(state.exp.xp)],
+      obs: [clamp(state.obs.x), clamp(state.obs.xp)],
+    };
+  }
+
+  // click slot i in a row: set that row to (i+1)/10 tickets
+  function setRow(src, row, i) {
+    const probs = rowProbs()[src];
+    let k = i + 1;
+    if (Math.abs(probs[row] * 10 - k) < 1e-6) k = i; // clicking the last ticket removes it
+    state[src][row === 0 ? "x" : "xp"] = k / 10;
+    presetSel.value = "custom";
+    syncInputs();
+    update();
+  }
+
+  function drawFigure() {
+    const svg = $("fig");
+    svg.innerHTML = "";
+    clipCounter = 0;
+    el("rect", { x: 160, y: 15, width: 1030, height: 505, fill: "#e9effa", stroke: "#8eaadb", "stroke-width": 1.5 }, svg);
+
+    drawPerson(svg, 64, 160, true);
+    text(svg, 70, 252, "with flyer", { "font-size": 22, "font-weight": 700 });
+    drawPerson(svg, 64, 350, false);
+    text(svg, 70, 434, "without", { "font-size": 22, "font-weight": 700 });
+    text(svg, 70, 462, "flyer", { "font-size": 22, "font-weight": 700 });
+
+    const probs = rowProbs();
+    const panels = [
+      { src: "exp", x: 210, title: "flyer handed out" },
+      { src: "obs", x: 700, title: "flyer obtainable" },
+    ];
+    for (const p of panels) {
+      text(svg, p.x + 225, 70, p.title, { "font-size": 28, "font-weight": 700 });
+      el("rect", { x: p.x, y: 97, width: 450, height: 380, fill: "#fff", stroke: "#111", "stroke-width": 2 }, svg);
+      el("line", { x1: p.x, y1: 287, x2: p.x + 450, y2: 287, stroke: "#111", "stroke-width": 2 }, svg);
+      for (let row = 0; row < 2; row++) {
+        const tickets = probs[p.src][row] * 10;
+        const y0 = row === 0 ? 147 : 337;
+        for (let i = 0; i < 10; i++) {
+          const cx = p.x + 65 + (i % 5) * 80;
+          const cy = y0 + Math.floor(i / 5) * 80;
+          const fill = Math.max(0, Math.min(1, tickets - i));
+          drawSlot(svg, cx, cy, fill, () => setRow(p.src, row, i));
+        }
+      }
+    }
+  }
+
+  // ---------- results ----------
+  function intervalChart(rows) {
+    const W = 700, H = 40 + rows.length * 44, L = 190, R = 30;
+    const vals = [0];
+    rows.forEach((r) => vals.push(r.low, r.high));
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = Math.max((hi - lo) * 0.12, 0.5);
+    lo -= pad; hi += pad;
+    const x = (v) => L + ((v - lo) / (hi - lo)) * (W - L - R);
+
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("style", "width:100%;max-width:760px;height:auto;display:block");
+
+    // ticks
+    const step = niceStep((hi - lo) / 6);
+    for (let t = Math.ceil(lo / step) * step; t <= hi + 1e-9; t += step) {
+      const tx = x(t);
+      el("line", { x1: tx, y1: 10, x2: tx, y2: H - 24, stroke: "#eceef1", "stroke-width": 1 }, svg);
+      text(svg, tx, H - 8, fmtB(t), { "font-size": 12, fill: "#888" });
+    }
+    el("line", { x1: x(0), y1: 6, x2: x(0), y2: H - 24, stroke: "#555", "stroke-width": 1.5, "stroke-dasharray": "4 3" }, svg);
+
+    rows.forEach((r, i) => {
+      const y = 32 + i * 44;
+      text(svg, L - 12, y + 4, r.label, { "font-size": 13, "text-anchor": "end", fill: "#333" });
+      const g = el("g", {}, svg);
+      el("rect", { x: L, y: y - 18, width: W - L - R, height: 36, fill: "transparent" }, g);
+      const x1 = x(r.low), x2 = x(r.high);
+      if (x2 - x1 < 1) {
+        el("circle", { cx: x1, cy: y, r: 6, fill: r.color, stroke: "#fff", "stroke-width": 2 }, g);
+      } else {
+        el("rect", { x: x1, y: y - 5, width: x2 - x1, height: 10, rx: 4, fill: r.color }, g);
+        el("line", { x1: x(r.mid), y1: y - 10, x2: x(r.mid), y2: y + 10, stroke: r.color, "stroke-width": 2 }, g);
+      }
+      const tipText = r.high - r.low < 1e-9
+        ? `${r.label}: ${fmtB(r.low)}`
+        : `${r.label}: ${fmtB(r.low)} to ${fmtB(r.high)} (midpoint ${fmtB(r.mid)})`;
+      attachTip(g, tipText);
+    });
+    return svg;
+  }
+
+  function niceStep(raw) {
+    const p = 10 ** Math.floor(Math.log10(raw));
+    const m = raw / p;
+    return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
+  }
+
+  const tip = $("tip");
+  function attachTip(node, str) {
+    node.addEventListener("mousemove", (e) => {
+      tip.textContent = str;
+      tip.style.display = "block";
+      tip.style.left = e.clientX + 12 + "px";
+      tip.style.top = e.clientY + 12 + "px";
+    });
+    node.addEventListener("mouseleave", () => (tip.style.display = "none"));
+  }
+
+  function rangeStr(a, b, f) {
+    return Math.abs(a - b) < 5e-4 ? f(a) : `${f(Math.min(a, b))} to ${f(Math.max(a, b))}`;
+  }
+
+  function renderResults(res) {
+    const out = $("results");
+    out.innerHTML = "";
+    if (res.errors.length) {
+      out.innerHTML = res.errors.map((e) => `<div class="msg err">${e}</div>`).join("");
+      if (!res.benefit) return;
+    }
+    if (Object.values(state.rewards).some((v) => !Number.isFinite(v))) {
+      out.innerHTML += `<div class="msg err">All rewards must be numbers.</div>`;
+      return;
+    }
+    if (res.errors.length) return;
+
+    const b = res.benefit;
+    const point = b.high - b.low < 1e-9;
+    let badge;
+    if (b.mid > 1e-9) badge = '<span class="badge act">Hand out the flyer</span>';
+    else if (b.mid < -1e-9) badge = '<span class="badge dont">Don’t hand out the flyer</span>';
+    else badge = '<span class="badge neutral">Indifferent</span>';
+
+    let note;
+    if (point) note = "The data identify the expected benefit exactly.";
+    else if (b.low > 0 || b.high < 0) note = "The decision is the same everywhere in the range.";
+    else note = "The range includes 0, so the decision uses the midpoint, as in the paper’s analysis.";
+
+    const head = document.createElement("div");
+    head.innerHTML = `
+      <h2>Expected benefit of handing out the flyer</h2>
+      <div class="headline">
+        <div class="big">${fmtB(b.mid)}</div>
+        <div class="range">${point ? "point estimate" : `range ${fmtB(b.low)} to ${fmtB(b.high)} (midpoint shown)`}</div>
+        <div>${badge}</div>
+      </div>
+      <div class="note">${note}</div>`;
+    out.appendChild(head);
+
+    const chartWrap = document.createElement("div");
+    chartWrap.style.margin = "16px 0 8px";
+    chartWrap.appendChild(intervalChart([
+      { label: "experimental + observational", ...b, color: "#2f5aa8" },
+      { label: "experimental only", ...res.benefitExp, color: "#9aa3ad" },
+      { label: "observational only", ...res.benefitObs, color: "#c98a0b" },
+    ]));
+    out.appendChild(chartWrap);
+
+    // types table
+    const tl = res.typesLo, th = res.typesHi, r = state.rewards;
+    const rows = [
+      ["complier", "ticket only if handed a flyer", "complier"],
+      ["always-goer", "ticket either way", "always"],
+      ["never-goer", "never a ticket", "never"],
+      ["defier", "ticket only if not handed a flyer", "defier"],
+    ];
+    const tbl = document.createElement("div");
+    tbl.innerHTML = `
+      <table class="types">
+        <thead><tr><th>type</th><th style="text-align:left">meaning</th><th>reward</th><th>proportion</th><th>contribution</th></tr></thead>
+        <tbody>
+          ${rows.map(([name, desc, k]) => `
+            <tr><td>${name}</td><td class="desc">${desc}</td><td>${fmtB(r[k])}</td>
+              <td>${rangeStr(tl[k], th[k], fmtP)}</td>
+              <td>${rangeStr(r[k] * tl[k], r[k] * th[k], fmtB)}</td></tr>`).join("")}
+        </tbody>
+        <tfoot><tr><td>expected benefit</td><td></td><td></td><td></td><td>${point ? fmtB(b.low) : `${fmtB(b.low)} to ${fmtB(b.high)}`}</td></tr></tfoot>
+      </table>
+      <p class="hint" style="color:var(--ink-3);font-size:13px">The ranges are linked: every type's share is
+        determined by the complier share, so they move together and can't be picked independently.</p>`;
+    out.appendChild(tbl);
+
+    // details
+    const lo = res.pns.lo, hi = res.pns.hi;
+    const termRows = (terms, target) => terms.map((t) =>
+      `<tr class="${Math.abs(t.value - target) < 1e-9 ? "active" : ""}"><td>${t.label}</td><td>${fmtP(t.value)}</td></tr>`).join("");
+    const det = document.createElement("details");
+    det.innerHTML = `
+      <summary>How this is computed</summary>
+      <p><b>Data.</b> Experimental: P(y<sub>x</sub>) = ${fmtP(res.exp.Pyx)}, P(y<sub>x'</sub>) = ${fmtP(res.exp.Pyxp)},
+        ATE = ${fmtP(res.exp.ATE)}. Observational: P(y|x) = ${fmtP(res.obs.Pyx_obs)}, P(y|x') = ${fmtP(res.obs.Pyxp_obs)},
+        P(x) = ${fmtP(res.obs.Px)}, P(y) = ${fmtP(res.obs.Py)}.</p>
+      <p><b>Step 1: bound the share of compliers.</b> P(benefit) = P(y<sub>x</sub>, y'<sub>x'</sub>), using the
+        Tian&ndash;Pearl bounds (Mueller &amp; Pearl, 2022). Binding terms are highlighted.</p>
+      <div style="display:flex;gap:32px;flex-wrap:wrap">
+        <div>lower bound = max of
+          <table class="terms">${termRows(res.pns.lowerTerms, lo)}</table></div>
+        <div>upper bound = min of
+          <table class="terms">${termRows(res.pns.upperTerms, hi)}</table></div>
+      </div>
+      <p>So ${rangeStr(lo, hi, fmtP)} are compliers. With experimental data only, the range would be
+        ${rangeStr(res.pnsExp.lo, res.pnsExp.hi, fmtP)}; with observational data only,
+        ${rangeStr(res.pnsObs.lo, res.pnsObs.hi, fmtP)}.</p>
+      <p><b>Step 2: get the other types.</b> P(defier) = P(complier) &minus; ATE, P(always-goer) = P(y<sub>x</sub>) &minus;
+        P(complier), P(never-goer) = P(y'<sub>x'</sub>) &minus; P(complier).</p>
+      <p><b>Step 3: compute the expected benefit.</b> B = &beta;&middot;P(complier) + &gamma;&middot;P(always) + &theta;&middot;P(never) + &delta;&middot;P(defier).
+        B is linear in P(complier) with slope &sigma; = &beta; &minus; &gamma; &minus; &theta; + &delta; = ${fmtB(res.sigma)},
+        so its extremes lie at the complier bounds (Li &amp; Pearl, 2019, Theorem 1).
+        ${Math.abs(res.sigma) < 1e-9 ? "Here &sigma; = 0 (gain equality), so B is a point estimate." : ""}</p>
+      <p><b>Observational data only.</b> Without an experiment, we only know what happened to people under
+        the choice they made. Someone who took the flyer and got a ticket could be a complier or an
+        always-goer; someone who took it and got no ticket could be a never-goer or a defier; someone who
+        didn't take it and got a ticket could be an always-goer or a defier; and someone who didn't take it
+        and got no ticket could be a complier or a never-goer. The range assigns each group entirely to
+        its best type (upper end) or worst type (lower end):
+        ${fmtB(res.benefitObs.low)} to ${fmtB(res.benefitObs.high)}.</p>`;
+    out.appendChild(det);
+  }
+
+  function update() {
+    drawFigure();
+    const e = state.exp, o = state.obs;
+    const vals = [e.x, e.xp, o.x, o.xp];
+    if (vals.some((v) => !Number.isFinite(v) || v < 0 || v > 1)) {
+      renderResults({ errors: ["All probabilities must be numbers between 0 and 1."] });
+      return;
+    }
+    // observational joint probabilities with P(x) = 0.5
+    const obsJoint = { xy: o.x / 2, xyp: (1 - o.x) / 2, xpy: o.xp / 2, xpyp: (1 - o.xp) / 2 };
+    const expArms = { xy: e.x, xyp: 1 - e.x, xpy: e.xp, xpyp: 1 - e.xp };
+    renderResults(Benefit.compute(obsJoint, expArms, state.rewards));
+  }
+
+  presetSel.value = "0";
+  loadTrial(0);
+  syncInputs();
+  update();
+})();
+</script>
+</body>
+</html>

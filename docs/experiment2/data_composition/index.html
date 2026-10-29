@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="html">
+    <head>
+        <title> Experiment 10 </title>
+        
+        <link rel="stylesheet" href='css/jspsych.css' />
+        <link rel="stylesheet" href='css/jquery-ui-edit.css' />
+       
+        <script src='js/jquery.min.js'></script>
+        <script src='js/jquery-ui.min.js'></script>
+        <script src='https://proliferate.alps.science/static/js/proliferate.js'></script>
+
+        <script src='js/jspsych.js'></script>
+        <script src='js/jspsych-instructions.js'></script>
+        <script src='js/jspsych-button.js'></script>
+        <script src='js/jspsych-multi-choice.js'></script>
+        <script src='js/jspsych-form.js'></script>
+        <script src='js/trial_info.js'></script>
+<!--        <script src='js/plugin-survey.js'></script>-->
+        <script src="https://unpkg.com/@jspsych/plugin-survey@0.2.1"></script>
+    </head>
+    <script>
+        // create timeline
+        timeline = [];
+        benefits = [];
+        optimal_decisions = [];
+
+        // display welcome screen
+        const welcome = {
+            type: 'html-button-response',
+            stimulus: '<p><b>Consent Form</b></p> <div style="text-align:left;' +
+                'background-color:lightblue; padding:20px; max-width:900px;">' +
+                '<p><b>Description:</b> Welcome! You are invited to participate' +
+                ' in a research study in cognitive psychology. You will be asked' +
+                ' to perform various tasks on a computer which may include:' +
+                ' looking at images or videos, listening to sounds, reading' +
+                ' scenarios, or playing games. You may be asked a number of' +
+                // careful about single quotes
+                " different questions about making judgments and intepreting" +
+                " people's actions. All information collected will remain" +
+                ' confidential. </p>' +
+                ' <p> <b>Risks and benefits:</b> Risks involved in this study' +
+                ' are the same as those normally associated with using a' +
+                ' computer (e.g., mild eye/arm strain). If you have any pre-' +
+                ' existing conditions that might make reading and completing' +
+                ' a computer-based survey strenuous for you, you should' +
+                ' probably elect to not participate in this study. If at any' +
+                ' time during the study you feel unable to participate because' +
+                ' you are experiencing strain, you may end your participation' +
+                ' without penalty. We cannot and do not guarantee or promise that' +
+                ' you will receive any benefits from this study. Your decision' +
+                ' whether or not to participate in this study will not affect' +
+                ' your employment, medical care, and/or grades in school. </p>' +
+                '<p><b>Time involvement:</b> Your participation in this' +
+                ' experiment will take 10-15 minutes. </p>' +
+                '<p><b> Payment:</b> If recruitment materials indicate payment' +
+                ' (e.g., Prolific or other recruitment), you will receive' +
+                ' compensation as indicated. </p>' +
+                "<p><b>Subject's rights:</b> If you have read this notice and" +
+                ' have decided to participate in this project, please understand' +
+                ' your participation is voluntary and you have the right to' +
+                ' withdraw your consent or discontinue participation at any' +
+                ' time without penalty or loss of benefits to which you are' +
+                ' otherwise entitled. You have the right to refuse to answer' +
+                ' particular questions. Your individual privacy will be' +
+                ' maintained in all published and written data resulting from' +
+                ' the study. </p>' +
+                '<p><b>Contact information:</b> If you have any questions,' +
+                ' concerns or complaints about this research study, its' +
+                ' procedures, or risks and benefits, you should ask the' +
+                ' Protocol Director, (Professor Tobias Gerstenberg, Phone:' +
+                ' (650) 725-2431; Email: gerstenberg@stanford.edu). </p>' +
+                '<p><b>Independent contact:</b> If you are not satisfied' +
+                ' with how this study is being conducted, or if you have' +
+                ' any concerns, complaints, or general questions about the' +
+                ' research or your rights as a participant, please contact' +
+                ' the Stanford Institutional Review Board (IRB) to speak' +
+                ' to someone independent of the research team via email at' +
+                ' irb2-manager@lists.stanford.edu, or via phone at' +
+                ' (650) 723-2480 or toll free at 1-866-680-2906. You can also' +
+                ' write to the Stanford IRB, Stanford University, 3000 El' +
+                ' Camino Real, Five Palo Alto Square, 4th Floor, Palo Alto,' +
+                ' CA 94306. </p>' +
+                '<p>You may want to print a copy of this consent form to' +
+                ' keep. By clicking the button below, you acknowledge that' +
+                ' you have read the above information, that you are 18 years' +
+                ' of age, or older and give your consent to participate in' +
+                ' our internet-based study and consent for us to analyze the' +
+                ' resulting data. </p> </div>' +
+                '<p> Do you agree with the terms of the experiment as explained' +
+                ' above? </p>',
+            choices: ['I agree']
+        };
+        timeline.push(welcome);
+
+        var info = "<div style=\"display: inline-block\">" +
+            "<style type=\"text/css\">\n" +
+            ".tg  {border-collapse:collapse;border-spacing:0;}\n" +
+            ".tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;\n" +
+            "  overflow:hidden;padding:10px 5px;word-break:normal;}\n" +
+            ".tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;\n" +
+            "  font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}\n" +
+            ".tg .tg-7btt{border-color:inherit;font-weight:bold;text-align:center;vertical-align:top}\n" +
+            "</style>\n" +
+            "<table class=\"tg\">\n" +
+            "<thead>\n" +
+            "  <tr>\n" +
+            "    <th class=\"tg-7btt\">Value of returning customer</th>\n" +
+            "    <th class=\"tg-7btt\">Cost of discouraged customer</th>\n" +
+            "    <th class=\"tg-7btt\">Cost of flyer</th>\n" +
+            "  </tr>\n" +
+            "</thead>\n" +
+            "<tbody>\n" +
+            "  <tr>\n" +
+            "    <td class=\"tg-7btt\">+$10</td>\n" +
+            "    <td class=\"tg-7btt\">-$20</td>\n" +
+            "    <td class=\"tg-7btt\">-$0.50</td>\n" +
+            "  </tr>\n" +
+            "</tbody>\n" +
+            "</table>" +
+            "</div>"
+
+        let loop_timeline = [];
+
+        let example_pages = [];
+        for (let i = 1; i <= 12; i++) {
+            let page = '<img alt="" src="' + example_trial_info[0]['slide' + i] + '"/><br>' +
+                '<p class="image-prompt">' + example_trial_info[0]['prompt'+i] +
+                '</p>';
+            example_pages.push(page);
+        }
+        bonus_page = '<div style="width:60%; min-width:300px; margin:5em auto auto auto;">' +
+            '<h2>Bonus Payments</h2><p>' + example_trial_info[0]['prompt13'] +  '</p></div>'
+        example_pages.push(bonus_page);
+        let e2_trials = [1];
+        for (let i = 0; i < e2_trials.length; i++) {
+            let page = '<h2>Apollo Theater</h2><img alt="" src="' + example_trial_info[1]['slide' + e2_trials[i]] +
+                '"/><br> <p class="image-prompt">' +
+                example_trial_info[1]['prompt'+e2_trials[i]] + '</p>';
+            example_pages.push(page);
+        }
+
+        let instructions = {
+            timeline_variables: example_trial_info,
+            type: 'instructions',
+            pages: example_pages,
+            show_clickable_nav: true,
+            on_start: function() { jsPsych.setProgressBar(0.02); },
+            on_finish: function() { jsPsych.setProgressBar(0.1); }
+        };
+        loop_timeline.push(instructions);
+
+        let example_response = {
+            type: 'survey-html-form',
+            html: function () {
+                return '<h2>Apollo Theater</h2> <img alt="" src="trials/trialE2-1.png"/> <p class="image-prompt"></p>' +
+                    '<div style="max-width:600px; text-align:center; display:inline-block"> ' +
+                    '<p>Please enter the number of people who returned to the theater under each condition:</p>' +
+                    '<div class="row" style="display:inline-block; line-height:1.8em;">' +
+                    '<div class="column-left" style="text-align:left">' +
+                    '<em>Were given flyer (top left cell):<br>' +
+                    '<em>Were not given flyer (bottom left cell):<br>' +
+                    '<em>Took flyer (top right cell):<br>' +
+                    '<em>Did not take flyer (bottom right cell):' +
+                    '</div>' +
+                    '<div class="column-right" style="text-align:right">' +
+                    '<input name="pydox" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                    '<input name="pydoxp" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                    '<input name="pyx" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                    '<input name="pyxp" type="number" min="0" max="10" style="width:2em direction:rtl">' +
+                    '</div> <div style="display:inline-block"><br>' +
+                    info + '<br>The <b>Apollo Theater</b> is Jeff\'s local theater.' +
+                    '<br>Do you want to hand <b>Jeff</b> a flyer?</div>' +
+                    '<div style="max-width:700px; text-align:center;">' +
+                    '<input type="radio" id="nohandout" name="flyer" value=0>' +
+                    '<label for="nohandout">No</label>    ' +
+                    '<input type="radio" id="handout" name="flyer" value=1>\n' +
+                    '<label for="handout">Yes</label><br></div>';
+            },
+            data: {trial: jsPsych.timelineVariable('trial')},
+            button_label: 'Continue',
+        }
+        loop_timeline.push(example_response)
+        let example_feedback = {
+            type: 'html-button-response',
+            stimulus: function () {
+                let data = jsPsych.data.getLastTrialData().values()[0];
+                let decision, decision_cf, right_wrong, outcome, outcome_cf;
+                let b = 0.1 * -7.5;
+                let b_display = Math.abs(parseFloat(b.toFixed(2))).toString()
+                let response = JSON.parse(data.responses)
+                if (response['flyer'] === '1') {
+                    benefits.push(b)
+                    decision = "to hand out"
+                    decision_cf = "not to hand out"
+                } else {
+                    benefits.push(0)
+                    decision = "not hand out"
+                    decision_cf = "hand out"
+                }
+                if (b > 0) {
+                    optimal_decisions.push(b);
+                    if (response['flyer'] === '1') {
+                        right_wrong = "<span style=\"color:green\">right</span>"
+                        outcome = "earned $" + b_display
+                        outcome_cf = "earned $0.00"
+                    } else {
+                        right_wrong = "<span style=\"color:red\">wrong</span>"
+                        outcome = "earned $0.00"
+                        outcome_cf = "earned $" + b_display
+                    }
+                } else {
+                    optimal_decisions.push(0);
+                    if (response['flyer'] === '0') {
+                        right_wrong = "<span style=\"color:green\">right</span>"
+                        outcome = "lost $0.00"
+                        outcome_cf = "lost $" + b_display
+                    } else {
+                        right_wrong = "<span style=\"color:red\">wrong</span>"
+                        outcome = "lost $" + b_display
+                        outcome_cf = "lost $0.00"
+                    }
+                }
+                const feedback_contents = '<h4> You chose to <b>' + decision + '</b> the flyer.</h4>' +
+                    '<h4> This was the <b>' + right_wrong + '</b> choice.</h4>' +
+                    '<h4> You <b>' + outcome + '</b>. You would have ' + outcome_cf +
+                    ' if you had decided ' + decision_cf + ' the flyer.</h4>';
+                return '<h2>Apollo Theater</h2><div id="jspsych-html-slider-response-wrapper">' +
+                    '<div id="jspsych-html-slider-response-stimulus"><img alt="" src="trials/trialE2-1.png"></div>' +
+                    '<p>After each trial, you will find out how much money you earned or lost, based on the decision ' +
+                    'you made. You will also find out how much money you would have earned or lost, if you had ' +
+                    'chosen differently.</p>' +
+                    '<div style="border: 2px solid #232324; background-color: #edf1fa; margin:20px">' +
+                    '<div style="margin:20px">' + feedback_contents + '</div></div>';
+            },
+            choices: ['Continue']
+        }
+        loop_timeline.push(example_feedback)
+        
+        // display comprehension questions
+        let options_tf = ['True', 'False'];
+        let comprehension_qs = {
+            type: 'survey-multi-choice',
+            questions: [
+                {
+                    prompt: 'The flyer may encourage or discourage people to see the new movie.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'The effect of the flyer is the same for all movie-goers that frequent the same theater.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'When the flyers are obtainable, movie-goers are free to choose whether or not to take a ' +
+                        'flyer.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'When the flyers are handed out, movie-goers are free to choose whether or not to take a ' +
+                        'flyer.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'When you are handing out flyers, movie-goers who don\'t receive a flyer are still able ' +
+                        'to obtain one if they want one.',
+                    options: options_tf,
+                    horizontal: true
+                }
+            ],
+            preamble: 'Please answer a few comprehension questions so we know' +
+                ' that you understand the setup.',
+            on_finish: function(data){
+                // jspsych records responses as json strings
+                data.correct = (data.responses === '{"Q0":"True","Q1":"False","Q2":"True","Q3":"False","Q4":"False"}');
+            }
+        }
+        loop_timeline.push(comprehension_qs);
+        
+        let fail_comprehension = {
+            timeline: [{
+                type: 'html-button-response',
+                stimulus: 'Unfortunately, you missed some of the comprehension ' +
+                    'questions.</p> <p> Please review the instructions again.',
+                choices: ['Review'],
+            }],
+            conditional_function: function(){
+                let data = jsPsych.data.get().last(1).values()[0];
+                return !(data.correct);
+            }
+        }
+        loop_timeline.push(fail_comprehension);
+
+        let loop_node = {
+            timeline: loop_timeline,
+            loop_function: function(data){
+                data = jsPsych.data.get().last(1).values()[0];
+                return !(data.correct);
+            }
+        }
+        timeline.push(loop_node);
+        
+        // add transition to start
+        let trials_start = {
+            type: 'html-button-response',
+            stimulus: '<div style="width:60%; min-width:300px; margin:5em auto auto auto;"><p>' +
+                start_prompt1 + "<br> <br> Please do not refresh the page." +
+                " Click the start button whenever you're ready. <br> </div>",
+            choices: ['Start'],
+            on_finish: function() { jsPsych.setProgressBar(0.14); },
+        };
+        timeline.push(trials_start);
+
+        let full_trials = {
+            timeline_variables: full_trial_info,
+            timeline: [
+                {
+                    type: 'html-button-response',
+                    stimulus: function() {
+                        return '<h2>' + jsPsych.timelineVariable('theater', true) + '</h2> ' +
+                            '<img alt="" src="' + jsPsych.timelineVariable('slide3', true) + '"/>' +
+                            '<p class="image-prompt">' + jsPsych.timelineVariable('prompt3', true) + '</p>';
+                    },
+                },
+                {
+                    type: 'html-button-response',
+                    stimulus: function() {
+                        return '<h2>' + jsPsych.timelineVariable('theater', true) + '</h2> ' +
+                            '<img alt="" src="' + jsPsych.timelineVariable('slide6', true) + '"/>' +
+                            '<p class="image-prompt"><div style="display:inline-block">' +
+                            jsPsych.timelineVariable('prompt6', true) + '</div></p>';
+                    },
+                },
+                {
+                    type: 'survey-html-form',
+                    html: function () {
+                        return '<h2>' + jsPsych.timelineVariable('theater', true) + '</h2> ' +
+                            '<img alt="" src="' + jsPsych.timelineVariable('slide7', true) + '"/>' +
+                            '<p class="image-prompt"></p>' +
+                            '<div style="max-width:600px; text-align:center; display:inline-block"> ' +
+                            '<p>Please enter the number of people who returned to the theater under each condition:</p>' +
+                            '<div class="row" style="display:inline-block; line-height:1.8em;">' +
+                            '<div class="column-left" style="text-align:left">' +
+                            '<em>Were given flyer (top left cell):<br>' +
+                            '<em>Were not given flyer (bottom left cell):<br>' +
+                            '<em>Took flyer (top right cell):<br>' +
+                            '<em>Did not take flyer (bottom right cell):' +
+                            '</div>' +
+                            '<div class="column-right" style="text-align:right">' +
+                            '<input name="pydox" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                            '<input name="pydoxp" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                            '<input name="pyx" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                            '<input name="pyxp" type="number" min="0" max="10" style="width:2em direction:rtl">' +
+                            '</div> <div style="display:inline-block"><br>' +
+                            jsPsych.timelineVariable('prompt7', true) + '</div>' +
+                            '<div style="max-width:700px; text-align:center;">' +
+                            '<input type="radio" id="nohandout" name="flyer" value=0>' +
+                            '<label for="nohandout">No</label>    ' +
+                            '<input type="radio" id="handout" name="flyer" value=1>\n' +
+                            '<label for="handout">Yes</label><br></div>';
+                    },
+                    data: {trial: jsPsych.timelineVariable('trial')},
+                    button_label: 'Continue',
+                },
+                {
+                    type: 'html-button-response',
+                    stimulus: function () {
+                        let data = jsPsych.data.getLastTrialData().values()[0];
+                        let decision, decision_cf, right_wrong, outcome, outcome_cf;
+                        let b = 0.1 * jsPsych.timelineVariable('benefit', true);
+                        let b_display = Math.abs(parseFloat(b.toFixed(2))).toString()
+                        let response = JSON.parse(data.responses)
+                        if (response['flyer'] === '1') {
+                            benefits.push(b)
+                            decision = "to hand out"
+                            decision_cf = "not to hand out"
+                        } else {
+                            benefits.push(0)
+                            decision = "not hand out"
+                            decision_cf = "hand out"
+                        }
+                        if (b > 0) {
+                            optimal_decisions.push(b);
+                            if (response['flyer'] === '1') {
+                                right_wrong = "<span style=\"color:green\">right</span>"
+                                outcome = "earned $" + b_display
+                                outcome_cf = "earned $0.00"
+                            } else {
+                                right_wrong = "<span style=\"color:red\">wrong</span>"
+                                outcome = "earned $0.00"
+                                outcome_cf = "earned $" + b_display
+                            }
+                        } else {
+                            optimal_decisions.push(0);
+                            if (response['flyer'] === '0') {
+                                right_wrong = "<span style=\"color:green\">right</span>"
+                                outcome = "lost $0.00"
+                                outcome_cf = "lost $" + b_display
+                            } else {
+                                right_wrong = "<span style=\"color:red\">wrong</span>"
+                                outcome = "lost $" + b_display
+                                outcome_cf = "lost $0.00"
+                            }
+                        }
+                        const feedback_contents = '<h4> You chose to <b>' + decision + '</b> the flyer.</h4>' +
+                            '<h4> This was the <b>' + right_wrong + '</b> choice.</h4>' +
+                            '<h4> You <b>' + outcome + '</b>. You would have ' + outcome_cf +
+                            ' if you had decided ' + decision_cf + ' the flyer.</h4>';
+                        return '<h2>' + jsPsych.timelineVariable('theater', true) + '</h2> ' +
+                            '<img alt="" src="' + jsPsych.timelineVariable('slide7', true) + '"/>' +
+                            '<div style="border: 2px solid #232324; background-color: #edf1fa; margin:20px">' +
+                            '<div style="margin:20px">' + feedback_contents + '</div></div>';
+                    }
+                }
+            ],
+            choices: ['Continue'],
+            on_finish: function() {
+                jsPsych.setProgressBar(jsPsych.getProgressBarCompleted() + 0.02);
+            }
+        };
+        timeline.push(full_trials);
+
+        timeline.push({
+            type: 'html-button-response',
+            stimulus: '<div style="width:70%; min-width:300px; margin:5em auto auto auto;">' +
+                start_prompt2 + '<br><br>Click the button below to continue.<br><br></div>',
+            choices: ['Continue'],
+            on_finish: function() {
+                jsPsych.setProgressBar(jsPsych.getProgressBarCompleted() + 0.02);
+            }
+        });
+
+        let condensed_trials = {
+            timeline_variables: condensed_trial_info,
+            timeline: [
+                {
+                    type: 'survey-html-form',
+                    html: function () {
+                        return '<h2>' + jsPsych.timelineVariable('theater', true) + '</h2> ' +
+                            '<img alt="" src="' + jsPsych.timelineVariable('slide7', true) + '"/>' +
+                            '<p class="image-prompt"></p>' +
+                            '<div style="max-width:600px; text-align:center; display:inline-block"> ' +
+                            '<p>Please enter the number of people who returned to the theater under each condition:</p>' +
+                            '<div class="row" style="display:inline-block; line-height:1.8em;">' +
+                            '<div class="column-left" style="text-align:left">' +
+                            '<em>Were given flyer (top left cell):<br>' +
+                            '<em>Were not given flyer (bottom left cell):<br>' +
+                            '<em>Took flyer (top right cell):<br>' +
+                            '<em>Did not take flyer (bottom right cell):' +
+                            '</div>' +
+                            '<div class="column-right" style="text-align:right">' +
+                            '<input name="pydox" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                            '<input name="pydoxp" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                            '<input name="pyx" type="number" min="0" max="10" style="width:2em direction:rtl"><br>' +
+                            '<input name="pyxp" type="number" min="0" max="10" style="width:2em direction:rtl">' +
+                            '</div> <div style="display:inline-block"><br>' + info +
+                            '<br>The <b>' + jsPsych.timelineVariable('theater', true) + '</b> is ' +
+                            jsPsych.timelineVariable('name', true) + '\'s local theater.<br> ' +
+                            'Do you want to hand <b>' + jsPsych.timelineVariable('name', true) + '</b> a flyer? </div>' +
+                            '<div style="max-width:700px; text-align:center;">' +
+                            '<input type="radio" id="nohandout" name="flyer" value=0>' +
+                            '<label for="nohandout">No</label>    ' +
+                            '<input type="radio" id="handout" name="flyer" value=1>\n' +
+                            '<label for="handout">Yes</label><br></div>';
+                    },
+                    data: {trial: jsPsych.timelineVariable('trial')},
+                    button_label: 'Continue',
+                },
+                {
+                    type: 'html-button-response',
+                    choices: ['Continue'],
+                    stimulus: function () {
+                        let data = jsPsych.data.getLastTrialData().values()[0];
+                        let decision, decision_cf, right_wrong, outcome, outcome_cf;
+                        let b = 0.1 * jsPsych.timelineVariable('benefit', true);
+                        let b_display = Math.abs(parseFloat(b.toFixed(2))).toString()
+                        let response = JSON.parse(data.responses)
+                        if (response['flyer'] === '1') {
+                            benefits.push(b)
+                            decision = "hand out"
+                            decision_cf = "not hand out"
+                        } else {
+                            benefits.push(0)
+                            decision = "not hand out"
+                            decision_cf = "hand out"
+                        }
+                        if (b > 0) {
+                            optimal_decisions.push(b);
+                            if (response['flyer'] === '1') {
+                                right_wrong = "<span style=\"color:green\">right</span>"
+                                outcome = "earned $" + b_display
+                                outcome_cf = "earned $0.00"
+                            } else {
+                                right_wrong = "<span style=\"color:red\">wrong</span>"
+                                outcome = "earned $0.00"
+                                outcome_cf = "earned $" + b_display
+                            }
+                        } else {
+                            optimal_decisions.push(0);
+                            if (response['flyer'] === '0') {
+                                right_wrong = "<span style=\"color:green\">right</span>"
+                                outcome = "lost $0.00"
+                                outcome_cf = "lost $" + b_display
+                            } else {
+                                right_wrong = "<span style=\"color:red\">wrong</span>"
+                                outcome = "lost $" + b_display
+                                outcome_cf = "lost $0.00"
+                            }
+                        }
+                        const feedback_contents = '<h4> You chose to <b>' + decision + '</b> the flyer.</h4>' +
+                            '<h4> This was the <b>' + right_wrong + '</b> choice.</h4>' +
+                            '<h4> You <b>' + outcome + '</b>. You would have ' + outcome_cf +
+                            ' if you had decided ' + decision_cf + ' the flyer.</h4>';
+                        return '<h2>' + jsPsych.timelineVariable('theater', true) + '</h2> ' +
+                            '<img alt="" src="' + jsPsych.timelineVariable('slide7', true) + '"/>' +
+                            '<div style="border: 2px solid #232324; background-color: #edf1fa; margin:20px">' +
+                            '<div style="margin:20px">' + feedback_contents + '</div></div>';
+                    }
+                }
+            ],
+            randomize_order: true,
+            on_finish: function() {
+                jsPsych.setProgressBar(jsPsych.getProgressBarCompleted() + 0.015);
+            },
+        };
+        timeline.push(condensed_trials);
+
+        // feedback form
+        // note: Prolific collects: country of birth, current country of
+        //       residence, employment status, first language, nationality,
+        //       sex, and student status
+        timeline.push({
+            type: 'survey-html-form',
+            html: '<div style="max-width:700px; text-align:center;"> <p>' +
+                'What factors influenced how you decided to respond? Do you' +
+                ' have any questions or comments regarding the experiment?' +
+                '</p> <textarea name="feedback" cols="40" rows="6"' +
+                ' "autofocus"></textarea> <p> Please provide the following' +
+                ' information to complete the study. </p> <div style="text-' +
+                'align:center;"> <div style="text-align:left; display:' +
+                'inline-block; margin-right:20px; line-height:1.8em;"> <ol>' +
+                '<li>Age:</li> <br>' +
+                '<li>Gender:</li> <br><br>' +
+                '<li>Race:</li> <br><br><br><br><br><br>' +
+                '<li>Ethnicity:</li>' +
+                '</ol> </div>' +
+                '<div style="text-align:left; display: inline-block;' +
+                ' line-height:1.8em;">' +
+                // age text box
+                '<input name="age" type="number"  min="18" max="100" /> <br> <br>' +
+                // gender options
+                '<input name="gender" type="radio" id="female" value=' +
+                '"Female" /> <label for="female"> Female </label>' +
+                '<input name="gender" type="radio" id="male" value=' +
+                '"Male" /> <label for="male"> Male </label>' +
+                '<input name="gender" type="radio" id="nonbinary" value=' +
+                '"Non-binary" /> <label for="nonbinary"> Non-binary </label> <br>' +
+                '<input name="gender" type="radio" id="other_gender" value=' +
+                '"other_gender" /> <label for="other_gender"> Other: <input' +
+                ' type="text" name="other_gender" /> </label> <br><br>' +
+                // race options
+                '<input name="race" type="radio" id="white" value=' +
+                '"White" /> <label for="white"> White </label> <br>' +
+                '<input name="race" type="radio" id="black" value=' +
+                '"Black/African American" /> <label for="black">' +
+                ' Black/African American </label> <br>' +
+                '<input name="race" type="radio" id="am_ind" value=' +
+                '"American Indian/Alaska Native" /> <label for="am_ind">' +
+                ' American Indian/Alaska Native </label> <br>' +
+                '<input name="race" type="radio" id="asian" value=' +
+                '"Asian" /> <label for="asian"> Asian </label> <br>' +
+                '<input name="race" type="radio" id="pac_isl" value=' +
+                '"Native Hawaiian/Pacific Islander" /> <label for="pac_isl">' +
+                ' Native Hawaiian/Pacific Islander </label> <br>' +
+                '<input name="race" type="radio" id="other_race" value="other_race" />' +
+                '<label for="other_race"> Other: <input type="text" ' +
+                'name="other_race" /> </label> <br><br>' +
+                // ethnicity options
+                '<input name="ethnicity" type="radio" id="hisp" value=' +
+                '"Hispanic" /> <label for="hisp"> Hispanic </label>' +
+                '<input name="ethnicity" type="radio" id="nonhisp" value=' +
+                '"Non-Hispanic" /> <label for="nonhisp"> Non-Hispanic' +
+                ' </label>' +
+                '</div> </div>' +
+                '<p> Please press the finish button to complete the experiment. </p> </div>',
+            button_label: 'Finish',
+            on_start: function() { jsPsych.setProgressBar(1.0); }
+        });
+
+        jsPsych.init({
+            timeline: timeline,
+            preload_images: all_images,
+            show_progress_bar: true,
+            auto_update_progress_bar: false,
+            on_finish: function() {
+                let data = jsPsych.data.get().filter([
+                    {trial_type: 'survey-html-form'},
+                ]);
+                let values = data.values();
+
+                // construct trials data
+                let trials = [];
+                for (let i = 0; i < values.length; i++) {
+                    if (values[i]['trial']) {
+                        let response = JSON.parse(values[i]['responses']);
+                        response['trial'] = values[i]['trial'];
+                        response['trial_index'] = values[i]['trial_index'];
+                        response['time_elapsed'] = values[i]['time_elapsed'];
+                        response['rt'] = values[i]['rt'];
+                        trials.push(response);
+                    }
+                }
+
+                // parse demographics and construct participant data
+                let participant = JSON.parse(values[values.length-1]['responses']);
+                // override if selected "other" or none
+                if (participant.gender === "other_gender" || typeof participant.gender == "undefined") {
+                    participant.gender = participant.other_gender;
+                }
+                delete participant.other_gender;
+                if (participant.race === "other_race" || typeof participant.race == "undefined") {
+                    participant.race = participant.other_race;
+                }
+                delete participant.other_race;
+                if (typeof participant.ethnicity == "undefined") {
+                    participant.ethnicity = "";
+                }
+                participant.age = parseInt(participant.age);
+                participant.id = jsPsych.data.getURLVariable('id');
+                participant.time = parseInt(values[values.length-1]['time_elapsed']);
+
+                // convert to ISO format for mySQL
+                let now = new Date().toISOString();
+                participant.timestamp = now.slice(0, 19).replace('T', ' ');
+
+                proliferate.submit({
+                    "trials": trials,
+                    "participants": participant
+                });
+
+                let x = 0, y = 0, z = 0, bonus = 1;
+                for (let i = 0; i < benefits.length; i++) {
+                    let b = benefits[i];
+                    let d = optimal_decisions[i];
+                    if (b !== 0) {
+                        x++;
+                    }
+                    if (b === d) {
+                        y++;
+                    } else {
+                        z++;
+                    }
+                    bonus = bonus + b;
+                }
+                if (bonus < 0) {
+                    bonus = 0;
+                }
+                bonus = bonus.toFixed(2);
+
+                $('#jspsych-content').html('<div style="margin: auto;"> <p>' +
+                    'Congrats on completing our study! Out of the 22 total scenarios, you chose to hand out <b>' + x +
+                    '</b> flyers in total.<br><br>You made the right decision in <b>' + y + '</b> scenarios and the ' +
+                    'wrong decision in <b>' + z + '</b> scenarios.<br><br>' + 'You earned a total bonus payment of' +
+                    ' <b>$' + bonus + '</b>.<br><br>Thank you for participating in this experiment! ' +
+                    '</p><p> Redirecting you back to Prolific... </p>');
+                setTimeout(function(){}, 500);
+            }
+        });
+    </script>
+</html>

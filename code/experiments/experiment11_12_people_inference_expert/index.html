@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Experiment</title>
+
+  <!-- Load jsPsych plugins -->
+  <script src="js/jspsych.js"></script>
+  <script src="js/plugin-preload.js"></script>
+  <script src="js/plugin-instructions.js"></script>
+  <script src="js/plugin-html-button-response.js"></script>
+  <script src="js/plugin-survey-multi-choice.js"></script>
+  <script src="js/plugin-survey-html-form.js"></script>
+  <script src="https://unpkg.com/@jspsych-contrib/plugin-pipe@0.3"></script>
+
+  <!-- Load jQuery and CSS -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <link href="css/jspsych.css" rel="stylesheet" type="text/css">
+  <link rel="stylesheet" href="css/jquery-ui-edit.css" />
+  <script src='js/jquery.min.js'></script>
+  <script src='js/jquery-ui.min.js'></script>
+
+  <!-- Load trial infos and timeline scripts -->
+  <script src='js/shared.js'></script>
+  <script src='experiment11/trial_info.js'></script>
+  <script src='experiment12/trial_info.js'></script>
+  <script src="experiment11/timeline.js"></script>
+  <script src="experiment12/timeline.js"></script>
+</head>
+<body>
+<script>
+  async function createExperiment() {
+    const condition = await jsPsychPipe.getCondition("9buyyHifAKTx");
+    console.log("Condition: ", condition);
+
+    if (condition === 0) {
+      // Dynamically import the timeline for condition 1
+      timeline = timeline_obs_first;
+    } else if (condition === 1) {
+      // Dynamically import the timeline for condition 2
+      timeline = timeline_exp_first;
+    }
+
+    // Run the experiment with the assigned timeline
+    jsPsych.run(timeline);
+  }
+  createExperiment()
+</script>
+</body>
+</html>

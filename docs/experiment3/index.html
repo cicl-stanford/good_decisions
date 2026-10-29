@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Experiment</title>
+
+  <!-- Load jsPsych plugins -->
+  <script src="js/jspsych.js"></script>
+  <script src="js/plugin-preload.js"></script>
+  <script src="js/plugin-instructions.js"></script>
+  <script src="js/plugin-html-button-response.js"></script>
+  <script src="js/plugin-survey-multi-choice.js"></script>
+  <script src="js/plugin-survey-html-form.js"></script>
+  <script src="https://unpkg.com/@jspsych-contrib/plugin-pipe@0.3"></script>
+
+  <!-- Load jQuery and CSS -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <link href="css/jspsych.css" rel="stylesheet" type="text/css">
+  <link rel="stylesheet" href="css/jquery-ui-edit.css" />
+  <script src='js/jquery.min.js'></script>
+  <script src='js/jquery-ui.min.js'></script>
+
+  <!-- Load trial infos and timeline scripts -->
+  <script src='js/shared.js'></script>
+  <script src='trial_info.js'></script>
+  <script src='timeline.js'></script>
+</head>
+<body>
+<script>
+  async function createExperiment() {
+    // Run the experiment with the assigned timeline
+    jsPsych.run(timeline_exp_first);
+  }
+  createExperiment()
+</script>
+</body>
+</html>

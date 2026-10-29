@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title> Experiment 1 </title>
+        
+        <link rel="stylesheet" href='css/jspsych.css' />
+        <link rel="stylesheet" href='css/jquery-ui-edit.css' />
+       
+        <script src='js/jquery.min.js'></script>
+        <script src='js/jquery-ui.min.js'></script>
+        <script src='https://proliferate.alps.science/static/js/proliferate.js'></script>
+
+        <script src='js/jspsych.js'></script>
+        <script src='js/jspsych-instructions.js'></script>
+        <script src='js/jspsych-button.js'></script>
+        <script src='js/jspsych-multi-choice.js'></script>
+        <script src='js/jspsych-form.js'></script>
+        <script src='js/trial_info.js'></script>
+    </head>
+    </body></body>
+    <script>
+        // create timeline
+        timeline = [];
+        benefits = [];
+        optimal_decisions = [];
+
+        // display welcome screen
+        var welcome = {
+            type: 'html-button-response',
+            stimulus: '<p><b>Consent Form</b></p> <div style="text-align:left;' +
+                'background-color:lightblue; padding:20px; max-width:900px;">' +
+                '<p><b>Description:</b> Welcome! You are invited to participate' +
+                ' in a research study in cognitive psychology. You will be asked' +
+                ' to perform various tasks on a computer which may include:' +
+                ' looking at images or videos, listening to sounds, reading' +
+                ' scenarios, or playing games. You may be asked a number of' +
+                // careful about single quotes
+                " different questions about making judgments and intepreting" +
+                " people's actions. All information collected will remain" +
+                ' confidential. </p>' +
+                ' <p> <b>Risks and benefits:</b> Risks involved in this study' +
+                ' are the same as those normally associated with using a' +
+                ' computer (e.g., mild eye/arm strain). If you have any pre-' +
+                ' existing conditions that might make reading and completing' +
+                ' a computer-based survey strenuous for you, you should' +
+                ' probably elect to not participate in this study. If at any' +
+                ' time during the study you feel unable to participate because' +
+                ' you are experiencing strain, you may end your participation' +
+                ' without penalty. We cannot and do not guarantee or promise that' +
+                ' you will receive any benefits from this study. Your decision' +
+                ' whether or not to participate in this study will not affect' +
+                ' your employment, medical care, and/or grades in school. </p>' +
+                '<p><b>Time involvement:</b> Your participation in this' +
+                ' experiment will take 10-15 minutes. </p>' +
+                '<p><b> Payment:</b> If recruitment materials indicate payment' +
+                ' (e.g., Prolific or other recruitment), you will receive' +
+                ' compensation as indicated. </p>' +
+                "<p><b>Subject's rights:</b> If you have read this notice and" +
+                ' have decided to participate in this project, please understand' +
+                ' your participation is voluntary and you have the right to' +
+                ' withdraw your consent or discontinue participation at any' +
+                ' time without penalty or loss of benefits to which you are' +
+                ' otherwise entitled. You have the right to refuse to answer' +
+                ' particular questions. Your individual privacy will be' +
+                ' maintained in all published and written data resulting from' +
+                ' the study. </p>' +
+                '<p><b>Contact information:</b> If you have any questions,' +
+                ' concerns or complaints about this research study, its' +
+                ' procedures, or risks and benefits, you should ask the' +
+                ' Protocol Director, (Professor Tobias Gerstenberg, Phone:' +
+                ' (650) 725-2431; Email: gerstenberg@stanford.edu). </p>' +
+                '<p><b>Independent contact:</b> If you are not satisfied' +
+                ' with how this study is being conducted, or if you have' +
+                ' any concerns, complaints, or general questions about the' +
+                ' research or your rights as a participant, please contact' +
+                ' the Stanford Institutional Review Board (IRB) to speak' +
+                ' to someone independent of the research team via email at' +
+                ' irb2-manager@lists.stanford.edu, or via phone at' +
+                ' (650) 723-2480 or toll free at 1-866-680-2906. You can also' +
+                ' write to the Stanford IRB, Stanford University, 3000 El' +
+                ' Camino Real, Five Palo Alto Square, 4th Floor, Palo Alto,' +
+                ' CA 94306. </p>' +
+                '<p>You may want to print a copy of this consent form to' +
+                ' keep. By clicking the button below, you acknowledge that' +
+                ' you have read the above information, that you are 18 years' +
+                ' of age, or older and give your consent to participate in' +
+                ' our internet-based study and consent for us to analyze the' +
+                ' resulting data. </p> </div>' +
+                '<p> Do you agree with the terms of the experiment as explained' +
+                ' above? </p>',
+            choices: ['I agree']
+        }
+        timeline.push(welcome);
+
+        var info = "<div style=\"display: inline-block\">" +
+            "<style type=\"text/css\">\n" +
+            ".tg  {border-collapse:collapse;border-spacing:0;}\n" +
+            ".tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;\n" +
+            "  overflow:hidden;padding:10px 5px;word-break:normal;}\n" +
+            ".tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;\n" +
+            "  font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}\n" +
+            ".tg .tg-7btt{border-color:inherit;font-weight:bold;text-align:center;vertical-align:top}\n" +
+            "</style>\n" +
+            "<table class=\"tg\">\n" +
+            "<thead>\n" +
+            "  <tr>\n" +
+            "    <th class=\"tg-7btt\">Value of returning customer</th>\n" +
+            "    <th class=\"tg-7btt\">Cost of discouraged customer</th>\n" +
+            "    <th class=\"tg-7btt\">Cost of flyer</th>\n" +
+            "  </tr>\n" +
+            "</thead>\n" +
+            "<tbody>\n" +
+            "  <tr>\n" +
+            "    <td class=\"tg-7btt\">+$10</td>\n" +
+            "    <td class=\"tg-7btt\">-$20</td>\n" +
+            "    <td class=\"tg-7btt\">-$0.50</td>\n" +
+            "  </tr>\n" +
+            "</tbody>\n" +
+            "</table>" +
+            "</div>"
+        
+        var loop_timeline = [];
+
+        var example_pages = [];
+        for (var i = 1; i <= 12; i++) {
+            page = '<img src="' + example_trial_info[0]['slide' + i] + '"/><br>' +
+                '<p class="image-prompt">' + example_trial_info[0]['prompt'+i] +
+                '</p>';
+            example_pages.push(page);
+        }
+        bonus_page = '<div style="width:60%; min-width:300px; margin:auto; margin-top:5em;">' +
+            '<h2>Bonus Payments</h2><p>' + example_trial_info[0]['prompt13'] +  '</p></div>'
+        example_pages.push(bonus_page);
+        var e2_trials = [1];
+        for (var i = 0; i < e2_trials.length; i++) {
+            page = '<h2>Apollo Theater</h2><img src="' + example_trial_info[1]['slide' + e2_trials[i]] +
+                '"/><br> <p class="image-prompt">' +
+                example_trial_info[1]['prompt'+e2_trials[i]] + '</p>';
+            example_pages.push(page);
+        }
+
+        var instructions = {
+            timeline_variables: example_trial_info,
+            type: 'instructions',
+            pages: example_pages,
+            show_clickable_nav: true,
+            on_start: function() { jsPsych.setProgressBar(0.02); },
+            on_finish: function() { jsPsych.setProgressBar(0.1); }
+        };
+        loop_timeline.push(instructions);
+
+        var example_response = {
+            type: 'html-button-response',
+            stimulus: function() {
+                var html = '<h2>Apollo Theater</h2><div id="jspsych-html-slider-response-wrapper">' +
+                    '<div id="jspsych-html-slider-response-stimulus"><img src="trials/trialE2-1.png"></div><p>' +
+                    'The <b>Apollo Theater</b> is Jeff\'s local theater.<br><br>' + info +
+                    '<br><br>Do you want to hand <b>Jeff</b> a flyer?<br><div style="display: inline-block">';
+                return html;
+            },
+            choices: ['No', 'Yes']
+        }
+        loop_timeline.push(example_response)
+        
+        // display comprehension questions
+        var options_tf = ['True', 'False'];
+        var comprehension_qs = {
+            type: 'survey-multi-choice',
+            questions: [
+                {
+                    prompt: 'The flyer may encourage or discourage people to see the new movie.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'The effect of the flyer is the same for all movie-goers that frequent the same theater.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'When the flyers are obtainable, movie-goers are free to choose whether or not to take a ' +
+                        'flyer.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'When the flyers are handed out, movie-goers are free to choose whether or not to take a ' +
+                        'flyer.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'When you are handing out flyers, movie-goers who don\'t receive a flyer are still able ' +
+                        'to obtain one if they want one.',
+                    options: options_tf,
+                    horizontal: true
+                }
+            ],
+            preamble: 'Please answer a few comprehension questions so we know' +
+                ' that you understand the setup.',
+            on_finish: function(data){
+                // jspsych records responses as json strings
+                data.correct = (data.responses === '{"Q0":"True","Q1":"False","Q2":"True","Q3":"False","Q4":"False"}');
+            }
+        }
+        loop_timeline.push(comprehension_qs);
+        
+        var fail_comprehension = {
+            timeline: [{
+                type: 'html-button-response',
+                stimulus: 'Unfortunately, you missed some of the comprehension ' +
+                    'questions.</p> <p> Please review the instructions again.',
+                choices: ['Review'],
+            }],
+            conditional_function: function(){
+                var data = jsPsych.data.get().last(1).values()[0];
+                return !(data.correct);
+            }
+        }
+        loop_timeline.push(fail_comprehension);
+        
+        var loop_node = {
+            timeline: loop_timeline,
+            loop_function: function(data){
+                var data = jsPsych.data.get().last(1).values()[0];
+                return !(data.correct);
+            }
+        }
+        timeline.push(loop_node);
+        
+        // add transition to start
+        var trials_start = {
+            type: 'html-button-response',
+            stimulus: '<div style="width:60%; min-width:300px;' +
+                ' margin:auto; margin-top:5em;"> <p>' +
+                start_prompt1 + "<br> <br> Please do not refresh the page." +
+                " Click the start button whenever you're ready. <br> </div>",
+            choices: ['Start'],
+            on_finish: function() { jsPsych.setProgressBar(0.14); },
+        };
+        timeline.push(trials_start);
+
+        var full_trials = {
+            timeline_variables: full_trial_info,
+            timeline: [
+                {
+                    type: 'html-button-response',
+                    stimulus: function() {
+                        var html = '<h2>'+ jsPsych.timelineVariable('theater', true) +'</h2> ' +
+                            '<img src="' + jsPsych.timelineVariable('slide3', true) +
+                            '"/><p class="image-prompt">' + jsPsych.timelineVariable('prompt3', true) + '</p>';
+                        return html;
+                    },
+                },
+                {
+                    type: 'html-button-response',
+                    stimulus: function() {
+                        var html = '<h2>'+ jsPsych.timelineVariable('theater', true) +'</h2> ' +
+                            '<img src="' + jsPsych.timelineVariable('slide6', true) +
+                            '"/><p class="image-prompt"><div style="display:inline-block">' +
+                            jsPsych.timelineVariable('prompt6', true) + '</div></p>';
+                        return html;
+                    },
+                },
+                {
+                    type: 'html-button-response',
+                    stimulus: function() {
+                        var html = '<h2>'+ jsPsych.timelineVariable('theater', true) +'</h2> ' +
+                            '<img src="' + jsPsych.timelineVariable('slide7', true) + '"/>' +
+                            '<p class="image-prompt"><div style="display:inline-block">' +
+                            jsPsych.timelineVariable('prompt7', true) + '</div></p>';
+                        return html;
+                    },
+                    data: { trial: jsPsych.timelineVariable('trial') },
+                    choices: ['No', 'Yes']
+                }
+            ],
+            choices: ['Continue'],
+            on_finish: function(data) {
+                var prog = jsPsych.getProgressBarCompleted();
+                var b = jsPsych.timelineVariable('benefit', true);
+                if (data.trial) {
+                    if (data.button_pressed === '1') {
+                        benefits.push(b)
+                    } else {
+                        benefits.push(0)
+                    }
+                    if (b > 0) {
+                        optimal_decisions.push(b);
+                    } else {
+                        optimal_decisions.push(0);
+                    }
+                }
+                jsPsych.setProgressBar(prog + 0.03);
+            }
+        };
+        timeline.push(full_trials);
+
+        timeline.push({
+            type: 'html-button-response',
+            stimulus: '<div style="width:70%; min-width:300px;' +
+                ' margin:auto; margin-top:5em;">' +
+                start_prompt2 + '<br><br>Click the button below to continue.<br><br></div>',
+            choices: ['Continue'],
+            on_finish: function() {
+                var prog = jsPsych.getProgressBarCompleted();
+                jsPsych.setProgressBar(prog + 0.04);
+            }
+        });
+
+        var condensed_trials = {
+            timeline_variables: condensed_trial_info,
+            timeline: [
+                {
+                    type: 'html-button-response',
+                    stimulus: function() {
+                        var html = '<h2>'+ jsPsych.timelineVariable('theater', true) +'</h2> ' +
+                            '<img src="' + jsPsych.timelineVariable('slide7', true) + '"/>' +
+                            '<p class="image-prompt"><div style=\"display: inline-block\">' +
+                            'The <b>' + jsPsych.timelineVariable('theater', true) + '</b> is ' +
+                            jsPsych.timelineVariable('name', true) + '\'s local theater.<br><br>' + info +
+                            '<br><br>Do you want to hand <b>' + jsPsych.timelineVariable('name', true) +
+                            '</b> a flyer?</div></p>';
+                        return html;
+                    },
+                    data: { trial: jsPsych.timelineVariable('trial') },
+                    choices: ['No', 'Yes']
+                },
+            ],
+            randomize_order: true,
+            on_finish: function(data) {
+                var prog = jsPsych.getProgressBarCompleted();
+                var b = jsPsych.timelineVariable('benefit', true);
+                if (data.button_pressed === '1') {
+                    benefits.push(b)
+                } else {
+                    benefits.push(0)
+                }
+                if (b > 0) {
+                    optimal_decisions.push(b);
+                } else {
+                    optimal_decisions.push(0);
+                }
+                jsPsych.setProgressBar(prog + 0.03);
+            },
+        };
+        timeline.push(condensed_trials);
+
+        // feedback form
+        // note: Prolific collects: country of birth, current country of
+        //       residence, employment status, first language, nationality,
+        //       sex, and student status
+        timeline.push({
+            type: 'survey-html-form',
+            html: '<div style="max-width:700px; text-align:center;"> <p>' +
+                'What factors influenced how you decided to respond? Do you' +
+                ' have any questions or comments regarding the experiment?' +
+                '</p> <textarea name="feedback" cols="40" rows="6"' +
+                ' "autofocus"></textarea> <p> Please provide the following' +
+                ' information to complete the study. </p> <div style="text-' +
+                'align:center;"> <div style="text-align:left; display:' +
+                'inline-block; margin-right:20px; line-height:1.8em;"> <ol>' +
+                '<li>Age:</li> <br>' +
+                '<li>Gender:</li> <br><br>' +
+                '<li>Race:</li> <br><br><br><br><br><br>' +
+                '<li>Ethnicity:</li>' +
+                '</ol> </div>' +
+                '<div style="text-align:left; display: inline-block;' +
+                ' line-height:1.8em;">' +
+                // age text box
+                '<input name="age" type="number"  min="18" max="100" /> <br> <br>' +
+                // gender options
+                '<input name="gender" type="radio" id="female" value=' +
+                '"Female" /> <label for="female"> Female </label>' +
+                '<input name="gender" type="radio" id="male" value=' +
+                '"Male" /> <label for="male"> Male </label>' +
+                '<input name="gender" type="radio" id="nonbinary" value=' +
+                '"Non-binary" /> <label for="nonbinary"> Non-binary </label> <br>' +
+                '<input name="gender" type="radio" id="other_gender" value=' +
+                '"other_gender" /> <label for="other_gender"> Other: <input' +
+                ' type="text" name="other_gender" /> </label> <br><br>' +
+                // race options
+                '<input name="race" type="radio" id="white" value=' +
+                '"White" /> <label for="white"> White </label> <br>' +
+                '<input name="race" type="radio" id="black" value=' +
+                '"Black/African American" /> <label for="black">' +
+                ' Black/African American </label> <br>' +
+                '<input name="race" type="radio" id="am_ind" value=' +
+                '"American Indian/Alaska Native" /> <label for="am_ind">' +
+                ' American Indian/Alaska Native </label> <br>' +
+                '<input name="race" type="radio" id="asian" value=' +
+                '"Asian" /> <label for="asian"> Asian </label> <br>' +
+                '<input name="race" type="radio" id="pac_isl" value=' +
+                '"Native Hawaiian/Pacific Islander" /> <label for="pac_isl">' +
+                ' Native Hawaiian/Pacific Islander </label> <br>' +
+                '<input name="race" type="radio" id="other_race" value="other_race" />' +
+                '<label for="other_race"> Other: <input type="text"' +
+                'name="other_race" /> </label> <br><br>' +
+                // ethnicity options
+                '<input name="ethnicity" type="radio" id="hisp" value=' +
+                '"Hispanic" /> <label for="hisp"> Hispanic </label>' +
+                '<input name="ethnicity" type="radio" id="nonhisp" value=' +
+                '"Non-Hispanic" /> <label for="nonhisp"> Non-Hispanic' +
+                ' </label>' +
+                '</div> </div>' +
+                '<p> Please press the finish button to complete the experiment. </p> </div>',
+            button_label: 'Finish',
+            on_start: function() { jsPsych.setProgressBar(1.0); }
+        });
+
+        jsPsych.init({
+            timeline: timeline,
+            preload_images: all_images,
+            show_progress_bar: true,
+            auto_update_progress_bar: false,
+            on_finish: function() {
+                var data = jsPsych.data.get().filter([
+                    {trial_type: 'html-button-response'},
+                    {trial_type: 'survey-html-form'},
+                ]);
+                var values = data.values();
+
+                // construct trials data
+                var trials = [];
+                for (var i = 0; i < values.length; i++) {
+                    if (values[i]['trial']) {
+                        var temp = {};
+                        temp['trial'] = values[i]['trial'];
+                        temp['button_pressed'] = values[i]['button_pressed'];
+                        trials.push(temp);
+                    }
+                }
+
+                // parse demographics and construct participant data
+                var participant = JSON.parse(values[values.length-1]['responses']);
+                // override if selected "other" or none
+                if (participant.gender === "other_gender" || typeof participant.gender == "undefined") {
+                    participant.gender = participant.other_gender;
+                }
+                delete participant.other_gender;
+                if (participant.race === "other_race" || typeof participant.race == "undefined") {
+                    participant.race = participant.other_race;
+                }
+                delete participant.other_race;
+                if (typeof participant.ethnicity == "undefined") {
+                    participant.ethnicity = "";
+                }
+                participant.age = parseInt(participant.age);
+                participant.id = jsPsych.data.getURLVariable('id');
+                participant.time = parseInt(values[values.length-1]['time_elapsed']);
+
+                // convert to ISO format for mySQL
+                var now = new Date().toISOString();
+                participant.timestamp = now.slice(0, 19).replace('T', ' ');
+
+                proliferate.submit({
+                    "trials": trials,
+                    "participants": participant
+                });
+
+                var x = 0, y = 0, z = 0, bonus = 2;
+                for (var i = 0; i < benefits.length; i++) {
+                    var b = benefits[i];
+                    var d = optimal_decisions[i];
+                    if (b !== 0) {
+                        x++;
+                    }
+                    if (b === d) {
+                        y++;
+                    } else {
+                        z++;
+                    }
+                    bonus = bonus + (0.1 * b);
+                }
+                if (bonus < 0) {
+                    bonus = 0;
+                }
+                bonus = bonus.toFixed(2);
+
+                $('#jspsych-content').css('margin-top', 'auto');
+                $('#jspsych-content').html('<div style="margin: auto;"> <p>' +
+                    'Congrats on completing our study! Out of the 22 total scenarios, you chose to hand out <b>' + x +
+                    '</b> flyers in total.<br><br>You made the right decision in <b>' + y + '</b> scenarios and the ' +
+                    'wrong decision in <b>' + z + '</b> scenarios.<br><br>' + 'You earned a total bonus payment of' +
+                    ' <b>$' + bonus + '</b>.<br><br>Thank you for participating in this experiment! ' +
+                    '</p><p> Redirecting you back to Prolific... </p>');
+                setTimeout(function(){}, 500);
+            }
+        });
+    </script>
+</html>
