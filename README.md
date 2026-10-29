@@ -1,4 +1,5 @@
 # Making good decisions
+[![DOI](https://zenodo.org/badge/1366798965.svg)](https://doi.org/10.5281/zenodo.23776507)
 
 ## Abstract 
 
